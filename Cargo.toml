@@ -1,0 +1,18 @@
+[package]
+name = "slippingdipping"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+alloy = { version = "0.3.4", features = ["full", "network", "providers", "signer-keystore", "signer-local", "signers"] }
+alloy-erc20 = "0.2.1"
+anyhow = "1.0.88"
+chrono = "0.4.38"
+colored = "2.1.0"
+dialoguer = { version = "0.11.0", features = ["fuzzy-select", "history"] }
+lazy_static = "1.5.0"
+revm = { version = "14.0.1", features = ["alloydb"] }
+serde = "1.0.210"
+serde_json = "1.0.128"
+tokio = { version = "1.40.0", features = ["full"] }
+toml = "0.8.19"

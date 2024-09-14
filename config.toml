@@ -1,0 +1,30 @@
+[general]
+dipper_contract = "0x50843A6D6C46139fB5B608be9D6a393eaF3d1FdB"
+
+[sniping]
+# Tokens to buy (no decimals wrapped)
+tokens_amount="0.98%"
+
+# Dummy ETH amount to buy for unclogging
+eth_amount_for_unclogging=0.001
+
+# Number of sells for unclogging
+unclog_nloops=3
+
+# Minimum ETH Liquidity to consider as enableTrading = True
+min_eth_liquidity=2
+
+bribe_eth_good_validators=0
+bribe_eth_bad_validators=0
+good_validators = ["0x4838B106FCe9647Bdf1E7877BF73cE8B0BAD5f97"]
+
+spammer_secs_delay=12
+min_successfull_swaps=1
+
+[tx_builder]
+snipe_gas_limit="2101276"
+max_fee_per_gas=10
+max_priority_fee_per_gas=10
+
+[provider]
+rpc_url = "https://mainnet.infura.io/v3/e4a9193a1f35493786c001c3573f7905"
