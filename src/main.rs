@@ -6,7 +6,7 @@ use alloy::{
 };
 #[allow(unused_imports)]
 use alloy_erc20::Erc20ProviderExt;
-use api::strategies;
+use api::{simulate, strategies};
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::{FuzzySelect, Select};
 use revm::{db::AlloyDB, Database, DatabaseRef, Evm};
@@ -42,10 +42,8 @@ async fn main() {
             .unwrap(),
     );
 
-    // let mut ethersdb = AlloyDB::new(client.clone(), BlockId::from(20263538)).unwrap();
-    // {
-    //     let mut evm = Evm::builder().with_ref_db(&mut ethersdb).build();
-    // }
+    simulate::simulate(&client).await;
+    return;
 
     let menu_option = FuzzySelect::with_theme(&ColorfulTheme::default())
         .with_prompt("Choose an option")

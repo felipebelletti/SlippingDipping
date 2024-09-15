@@ -228,25 +228,3 @@ pub async fn run<M: Provider + 'static>(client: Arc<M>) {
         .await;
     }
 }
-
-fn get_dipper_tx(
-    from: Address,
-    to: Address,
-    calldata: Bytes,
-    nonce: u64,
-    value: U256,
-    gas_limit: u128,
-    max_fee_per_gas: u128,
-    max_priority_fee_per_gas: u128,
-) -> TransactionRequest {
-    TransactionRequest::default()
-        .with_from(from)
-        .with_to(to)
-        .with_input(calldata.clone())
-        .with_nonce(nonce)
-        .with_chain_id(1)
-        .with_value(value)
-        .with_gas_limit(gas_limit) // TODO get from config
-        .with_max_fee_per_gas(max_fee_per_gas)
-        .with_max_priority_fee_per_gas(max_priority_fee_per_gas)
-}
