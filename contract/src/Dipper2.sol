@@ -12,9 +12,10 @@ contract Dipper {
     IUniswapV2Factory private extFactory =
         IUniswapV2Factory(address(0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f));
 
-    struct DestWallet {
+    struct SniperWallet {
         address addr;
-        uint256 amount;
+        uint256 ethAmount;
+        uint256 tokensAmount;
     }
 
     modifier onlyOwner() {
@@ -52,11 +53,12 @@ contract Dipper {
         uint8 maxRounds,
         uint256 minEthLiquidity,
         uint256 swapThresholdTokens,
-        // address pair
+        // address pair,
         address[] calldata path
     )
         public
         payable
+        // SniperWallet[] calldata sniperWallets,
         onlyOwner
     {
         // require(!locks[path[path.length - 1]], "Locked");
@@ -79,8 +81,6 @@ contract Dipper {
                 maxRounds
             );
         }
-
-
     }
 
     function getDipperMode(
@@ -100,20 +100,20 @@ contract Dipper {
         }
     }
 
-    function getCloggedPercentage(
+    function getCloggedPercentageAndRawAmount(
         IERC20 token
-    ) public view onlyOwner returns (uint256) {
+    ) public view onlyOwner returns (uint256, uint256) {
         uint256 clogged = token.balanceOf(address(token));
         uint256 supply = token.totalSupply();
 
-        console.log("Clogged", clogged);
-        console.log("Supply ", supply);
+        console.log("CloggedAmount: ", clogged);
+        console.log("SupplyAmount:  ", supply);
 
         require(supply > 0, "Total supply must be greater than zero");
 
         // Supports up to 2 decimal places.
-        // ParsedCloggedPercentage = getCloggedPercentage() / 100
-        return (clogged * 10000) / supply;
+        // ParsedCloggedPercentage = getCloggedPercentageAndRawAmount() / 100
+        return ((clogged * 10000) / supply, clogged);
     }
 
     /*
@@ -131,8 +131,8 @@ contract Dipper {
         IERC20 token = IERC20(path[path.length - 1]);
 
         // calculates the clogged %
-        uint256 initialClogged = getCloggedPercentage(token);
-        console.log("initialClogged: ", initialClogged);
+        (uint256 initialClogged, ) = getCloggedPercentageAndRawAmount(token);
+        console.log("initialCloggedPercentage: ", initialClogged);
 
         // approve
         token.approve(address(extRouter), type(uint256).max);
@@ -164,8 +164,10 @@ contract Dipper {
         }
 
         // calculates the clogged % variation
-        uint256 cloggedAfterUnclog = getCloggedPercentage(token);
-        console.log("cloggedAfterUnclog: ", cloggedAfterUnclog);
+        (uint256 cloggedAfterUnclog, ) = getCloggedPercentageAndRawAmount(
+            token
+        );
+        console.log("cloggedAfterUnclogPercentage: ", cloggedAfterUnclog);
         uint256 cloggedVariation = initialClogged >= cloggedAfterUnclog
             ? initialClogged - cloggedAfterUnclog
             : 0;
@@ -189,7 +191,7 @@ contract Dipper {
 
         token.approve(address(extRouter), type(uint256).max);
 
-        uint256 initialClogged = getCloggedPercentage(token);
+        (uint256 initialClogged, ) = getCloggedPercentageAndRawAmount(token);
         console.log("initialClogged: ", initialClogged);
 
         try
@@ -205,7 +207,10 @@ contract Dipper {
         address[] memory sellPath = _invertPath(path);
 
         for (uint8 i = 0; i < max_sell_swaps; i++) {
-            uint256 cloggedPercentageBefore = getCloggedPercentage(token);
+            (
+                uint256 cloggedPercentageBefore,
+
+            ) = getCloggedPercentageAndRawAmount(token);
 
             // swap sell
             try
@@ -220,7 +225,10 @@ contract Dipper {
                 revert(string(abi.encodePacked("!xpl1_6 sell swap: ", reason)));
             }
 
-            uint256 cloggedPercentageAfter = getCloggedPercentage(token);
+            (
+                uint256 cloggedPercentageAfter,
+
+            ) = getCloggedPercentageAndRawAmount(token);
             uint256 roundUncloggedPercentage = cloggedPercentageBefore >=
                 cloggedPercentageAfter
                 ? cloggedPercentageBefore - cloggedPercentageAfter
@@ -244,9 +252,10 @@ contract Dipper {
                     roundUncloggedPercentage,
                     ". Which means the unclogging is not being effective anymore. We're done."
                 );
-                revert(
-                    "xpl1_6: We're not being effective, and I don't like that."
-                );
+                return;
+                // revert(
+                //     "xpl1_6: We're not being effective, and I don't like that."
+                // );
             }
         }
 
@@ -285,7 +294,10 @@ contract Dipper {
                 )
             );
 
-            uint256 cloggedPercentageBefore = getCloggedPercentage(token);
+            (
+                uint256 cloggedPercentageBefore,
+
+            ) = getCloggedPercentageAndRawAmount(token);
 
             try
                 extRouter.swapETHForExactTokens{value: address(this).balance}(
@@ -314,16 +326,19 @@ contract Dipper {
                 );
             }
 
-            uint256 cloggedPercentageAfter = getCloggedPercentage(token);
+            (
+                uint256 cloggedPercentageAfter,
+
+            ) = getCloggedPercentageAndRawAmount(token);
             uint256 roundUncloggedPercentage = cloggedPercentageBefore >=
                 cloggedPercentageAfter
                 ? cloggedPercentageBefore - cloggedPercentageAfter
                 : 0;
 
-            console.log("Unclog Round", i);
-            console.log("Before Clogged:", cloggedPercentageBefore);
-            console.log("After Clogged:", cloggedPercentageAfter);
-            console.log("Round Unclogged:", roundUncloggedPercentage);
+            console.log("Unclog Round #", i);
+            console.log("Before Clogged  %:", cloggedPercentageBefore);
+            console.log("After Clogged   %:", cloggedPercentageAfter);
+            console.log("Round Unclogged %:", roundUncloggedPercentage);
 
             if (cloggedPercentageAfter <= target_clogged_percentage) {
                 console.log(
@@ -338,13 +353,65 @@ contract Dipper {
                     roundUncloggedPercentage,
                     ". Which means the unclogging is not being effective anymore. We're done."
                 );
-                revert(
-                    "xpl2_3_4_5: We're not being effective, and I don't like that."
-                );
+                return;
+                // revert(
+                //     "xpl2_3_4_5: We're not being effective, and I don't like that."
+                // );
             }
         }
 
         revert("xpl2_3_4_5: Sorry, we could not, but at least we tried.");
+    }
+
+    ////////     SNIPER     ////////
+    function _buyTokenBySniperWallets(
+        address[] calldata path,
+        SniperWallet[] calldata sniperwallets,
+        uint8 max_failed_swaps
+    ) internal {
+        uint8 failed_swaps;
+
+        for (
+            uint8 walletIdx = 0;
+            walletIdx < sniperwallets.length;
+            walletIdx++
+        ) {
+            if (sniperwallets[walletIdx].tokensAmount == 0) {
+                // exactEth
+                uint[] memory amounts = extRouter.getAmountsOut(sniperwallets[walletIdx].ethAmount, path);
+                uint256 minTokensOut = amounts[1] * 30 / 100; // 70% slippage
+
+                try
+                    extRouter.swapExactETHForTokensSupportingFeeOnTransferTokens{
+                        value: sniperwallets[walletIdx].ethAmount
+                    }(
+                        minTokensOut,
+                        path,
+                        sniperwallets[walletIdx].addr,
+                        block.timestamp + 120
+                    )
+                {} catch Error(string memory) {
+                    failed_swaps += 1;
+                }
+            } else {
+                // usually maxbag
+                try
+                    extRouter.swapETHForExactTokens{
+                        value: sniperwallets[walletIdx].ethAmount
+                    }(
+                        sniperwallets[walletIdx].tokensAmount,
+                        path,
+                        sniperwallets[walletIdx].addr,
+                        block.timestamp + 120
+                    )
+                {} catch Error(string memory) {
+                    failed_swaps += 1;
+                }
+            }
+            if (failed_swaps > max_failed_swaps) {
+                revert("too many failed swaps");
+            }
+        }
     }
 
     ////////     UTILS     ////////
