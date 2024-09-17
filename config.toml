@@ -1,31 +1,43 @@
 [general]
-dipper_contract = "0xdC627c1358c6480d51EF71B933633eE849ea92e1"
+# The address of the Dipper contract to interact with
+dipper_contract = "0x8bafb5c30cc3f31bdcd3f921998d7f21710dc525"
 
 [sniping]
-# Tokens to buy (no decimals wrapped) (applicable only for wallets using the "<config>" value under the wallet "tokens_amount" field)
-tokens_amount="0.98%"
+# The amount of tokens to buy, specified as a percentage (e.g., "0.98%")
+# Applicable only for wallets using the "<config>" value under the wallet's "tokens_amount" field
+tokens_amount = "0.98%"
 
-# Swap Threshold for triggering a contract sell
-swap_threshold_tokens_amount="2000000000000000000000000"
+# The token amount threshold that triggers a contract sell
+swap_threshold_tokens_amount = "2000000000000000000000000"
 
-# The maximum eth spent for dipping the contract
-max_eth_spent_on_dipping=1.7
+# The maximum amount of ETH to spend on dipping the contract
+max_eth_spent_on_dipping = 1.7
 
-# Number of dipping rounds (swap buy / swap sell loops)
-max_dipper_rounds=100
+# The maximum number of dipping rounds (swap buy/sell loops)
+max_dipper_rounds = 100
 
-# The max number of user-swaps that are allowed to fail (specify 0 for none)
-max_failed_user_swaps=0
+# The maximum number of user swaps allowed to fail (specify 0 for none)
+max_failed_user_swaps = 0
 
-# Minimum ETH Liquidity to consider as enableTrading = True
-min_eth_liquidity=0
+# The minimum ETH liquidity required to consider that trading is enabled (enableTrading = True)
+min_eth_liquidity = 0
 
-spammer_secs_delay=12
+# The expected percentage variation in liquidity pool after dipping (e.g., 50.0 for 50%)
+expected_lp_variation_after_dip = 40.0
+
+# The delay in seconds between spammer txs
+spammer_secs_delay = 12
 
 [tx_builder]
-snipe_gas_limit="5139815"
-max_fee_per_gas=10
-max_priority_fee_per_gas=10
+# The gas limit for the dipper/snipe transaction
+snipe_gas_limit = "5139815"
+
+# The maximum fee per gas in Gwei
+max_fee_per_gas = 10
+
+# The maximum priority fee per gas in Gwei
+max_priority_fee_per_gas = 10
 
 [provider]
+# The RPC URL of the Ethereum node provider
 rpc_url = "http://127.0.0.1:8545"

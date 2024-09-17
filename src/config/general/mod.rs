@@ -21,6 +21,7 @@ pub struct GeneralConfig {
 #[derive(Debug, Deserialize)]
 pub struct SnipingConfig {
     pub tokens_amount: String,
+    pub expected_lp_variation_after_dip: f64,
     pub max_eth_spent_on_dipping: f64,
     pub max_failed_user_swaps: u8,
     pub max_dipper_rounds: u8,

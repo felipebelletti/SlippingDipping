@@ -2,7 +2,7 @@
 pragma solidity ^0.8.26;
 
 import "../lib/forge-std/src/Test.sol";
-import "../src/Dipper2.sol";
+import "../src/Dipper.sol";
 
 contract DipperTest is Test {
     Dipper dipper;
@@ -83,6 +83,7 @@ contract DipperTest is Test {
         path[1] = 0x57a6dAdAf333582bcAafB95D04fCb9b6084Cf454;
         dipper.exploit{value: 10e18}(
             100,
+            5000, // expect 50% lp variation
             1 * 10 ** 18,
             0,
             10000000000000000000000000,
@@ -127,6 +128,7 @@ contract DipperTest is Test {
 
         dipper.exploit{value: 1.3 * 10 ** 18}(
             100,
+            4000, // expect 50% lp variation
             1.3 * 10 ** 18,
             0,
             2000000000000000000000000,

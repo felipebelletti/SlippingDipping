@@ -1,6 +1,6 @@
 pub mod types;
 
-use crate::api::utils::erc20::get_percentage_token_supply;
+use crate::{api::utils::erc20::get_percentage_token_supply, printlnt};
 
 use self::types::{Wallet, WalletCollection};
 use alloy::{
@@ -9,6 +9,7 @@ use alloy::{
     signers::local::PrivateKeySigner,
 };
 use anyhow::{anyhow, Error};
+use colored::Colorize;
 use lazy_static::lazy_static;
 use revm::primitives::Address;
 use std::{fs, str::FromStr, sync::Arc};
@@ -78,6 +79,14 @@ impl WalletCollection {
 
             if wallet.tokens_amount == "<config>" {
                 wallet.tokens_amount = GLOBAL_CONFIG.sniping.tokens_amount.clone();
+                printlnt!(
+                    "{}",
+                    format!(
+                        "Wallet tokens amount ovewritten with config->tokens_amount = {}",
+                        wallet.tokens_amount
+                    )
+                    .yellow()
+                );
             }
 
             let tokens_amount = if wallet.tokens_amount.contains("%") {
@@ -86,15 +95,33 @@ impl WalletCollection {
                     .trim_end_matches('%')
                     .parse::<f64>()
                     .unwrap();
-                get_percentage_token_supply(&client, token_address, percentage).await
+                let tokens = get_percentage_token_supply(&client, token_address, percentage).await;
+                printlnt!(
+                    "{}",
+                    format!(
+                        "Wallet {}% tokens resolved to exact {} token on {}",
+                        percentage, tokens, token_address
+                    )
+                    .yellow()
+                );
+                tokens
             } else {
-                parse_units(&wallet.tokens_amount.to_string(), *decimals)
+                let tokens = parse_units(&wallet.tokens_amount.to_string(), *decimals)
                     .expect(&format!(
                         "parse_units({}, {})",
                         &wallet.tokens_amount.to_string(),
                         decimals
                     ))
-                    .into()
+                    .into();
+                printlnt!(
+                    "{}",
+                    format!(
+                        "Tokens amount resolved from {} to {} ({} decimals) on {}",
+                        wallet.tokens_amount, tokens, decimals, token_address
+                    )
+                    .yellow()
+                );
+                tokens
             };
 
             wallet.tokens_amount_in_wei = tokens_amount;

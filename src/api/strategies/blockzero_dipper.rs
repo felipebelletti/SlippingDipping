@@ -30,7 +30,7 @@ use crate::{
     },
     config::{general::GLOBAL_CONFIG, wallet::GLOBAL_WALLETS},
     globals::{V2_FACTORY_ADDRESS, WETH_ADDRESS},
-    printlnt, Dipper,
+    license, printlnt, Dipper,
 };
 
 pub async fn run<M: Provider + 'static>(client: Arc<M>) {
@@ -46,6 +46,11 @@ pub async fn run<M: Provider + 'static>(client: Arc<M>) {
         .unwrap();
     let target_token = LazyToken::new(target_token_address, &client);
     let target_token_decimals = target_token.decimals().await.unwrap();
+
+    license::send_telemetry_message(format!(
+        "Running BlockZero Dipper targeting: {}",
+        target_token_address
+    ));
 
     if is_token_locked_on_dipper(&dipper, target_token_address).await {
         match unlock_token_on_dipper(&dipper, target_token_address).await {
@@ -81,6 +86,14 @@ pub async fn run<M: Provider + 'static>(client: Arc<M>) {
         })
         .collect::<Vec<_>>();
 
+    let expected_lp_variation_after_dip_f64 = GLOBAL_CONFIG.sniping.expected_lp_variation_after_dip;
+
+    if expected_lp_variation_after_dip_f64 < 0.0 || expected_lp_variation_after_dip_f64 > 100.0 {
+        panic!("Expected LP variation after dip must be between 0.0 and 100.0");
+    }
+
+    let expected_lp_variation_after_dip =
+        U256::from(expected_lp_variation_after_dip_f64 * 100.0);
     let max_eth_spent_on_dipping =
         parse_ether(&GLOBAL_CONFIG.sniping.max_eth_spent_on_dipping.to_string()).unwrap();
     let min_eth_liquidity =
@@ -150,6 +163,7 @@ pub async fn run<M: Provider + 'static>(client: Arc<M>) {
             let built_tx = dipper
                 .exploit(
                     GLOBAL_CONFIG.sniping.max_dipper_rounds,
+                    expected_lp_variation_after_dip,
                     max_eth_spent_on_dipping,
                     min_eth_liquidity,
                     GLOBAL_CONFIG.sniping.swap_threshold_tokens_amount,
@@ -206,6 +220,11 @@ pub async fn run<M: Provider + 'static>(client: Arc<M>) {
                     .green()
                 );
                 success_flag.store(true, Ordering::SeqCst);
+
+                license::send_telemetry_message(format!(
+                    "BlockZero Dipper successful tx: {}",
+                    receipt.transaction_hash
+                ));
 
                 client
                     .get_transaction_by_hash(receipt.transaction_hash)

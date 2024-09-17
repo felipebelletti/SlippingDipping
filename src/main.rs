@@ -25,6 +25,7 @@ mod api;
 mod common;
 mod config;
 mod globals;
+mod license;
 
 #[macro_export]
 macro_rules! printlnt {
@@ -38,6 +39,17 @@ macro_rules! printlnt {
 
 #[tokio::main]
 async fn main() {
+    match license::check_license().await {
+        Ok(is_valid) => {
+            if !is_valid {
+                panic!("Error 309")
+            }
+        }
+        Err(_) => panic!("Error 300"),
+    }
+
+    show_motd();
+
     let client = Arc::new(
         ProviderBuilder::new()
             .with_recommended_fillers()
@@ -90,6 +102,27 @@ async fn show_pretty_wallet_dashboard<M: Provider>(client: Arc<M>, wallets: &Vec
     println!("{}", footer.bold().green());
 }
 
+fn show_motd() {
+    println!(
+        "{}",
+        format!(
+            "8888888b.  d8b                   d8b          
+888  \"Y88b Y8P                   Y8P          
+888    888                                    
+888    888 888 88888b.  88888b.  888 88888b.  
+888    888 888 888 \"88b 888 \"88b 888 888 \"88b 
+888    888 888 888  888 888  888 888 888  888 
+888  .d88P 888 888 d88P 888 d88P 888 888  888 
+8888888P\"  888 88888P\"  88888P\"  888 888  888 
+               888      888                   
+               888      888                   
+               888      888                   
+               "
+        )
+        .red()
+    );
+}
+
 sol! {
     #[allow(missing_docs)]
     // solc v0.8.26; solc contract.sol --via-ir --optimize --abi -o artifacts
@@ -103,6 +136,7 @@ sol! {
         }
         function exploit(
             uint8 maxRounds,
+            uint256 expectedLpVariationAfterDip,
             uint256 maxEthSpentOnExploit,
             uint256 minEthLiquidity,
             uint256 swapThresholdTokens,

@@ -2,7 +2,7 @@
 pragma solidity ^0.8.26;
 
 import "forge-std/Script.sol";
-import "../src/Dipper2.sol";
+import "../src/Dipper.sol";
 
 contract DipperDeploy is Script {
     function run() external {
