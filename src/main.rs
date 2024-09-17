@@ -1,4 +1,6 @@
+use alloy::primitives::utils::format_ether;
 use alloy::primitives::Address;
+use alloy::providers::Provider;
 use alloy::sol;
 use alloy::{
     eips::BlockId,
@@ -6,7 +8,10 @@ use alloy::{
 };
 #[allow(unused_imports)]
 use alloy_erc20::Erc20ProviderExt;
+use api::utils::print_pretty_dashboard;
 use api::{simulate, strategies};
+use colored::Colorize;
+use config::wallet::types::Wallet;
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::{FuzzySelect, Select};
 use revm::{db::AlloyDB, Database, DatabaseRef, Evm};
@@ -42,22 +47,47 @@ async fn main() {
             .unwrap(),
     );
 
-    simulate::simulate(&client).await;
-    return;
+    show_pretty_wallet_dashboard(client.clone(), GLOBAL_WALLETS.get_wallets()).await;
 
     let menu_option = FuzzySelect::with_theme(&ColorfulTheme::default())
         .with_prompt("Choose an option")
-        .items(&vec!["[ M1 ] Dipper Block Zero"])
+        .items(&vec!["[ 0 ] M1/M2/M3/M4/M5/M6 Block-Zero Dipper"])
         .default(0)
         .interact()
         .unwrap();
 
     match menu_option {
         0 => {
-            strategies::m1::run(client).await;
+            strategies::blockzero_dipper::run(client).await;
         }
         _ => unreachable!(),
     }
+}
+
+async fn show_pretty_wallet_dashboard<M: Provider>(client: Arc<M>, wallets: &Vec<Wallet>) {
+    let header = "╭──────────────────────── Wallets ────────────────────────╮";
+    let footer = "╰─────────────────────────────────────────────────────────╯";
+
+    println!("{}", header.bold().green());
+
+    for wallet in wallets {
+        let balance: String = format_ether(client.get_balance(wallet.address).await.unwrap());
+        let balance_rounded = format!("{:.4}", balance); // Limita a 4 casas decimais
+        println!(
+            "{}",
+            format!(
+                "{} {} {} {} {} {}",
+                "│".green(),
+                "➤".bright_blue(),
+                wallet.address.to_string().yellow(),
+                "│".white(),
+                format!("{} ETH", balance_rounded.purple()),
+                "│".green(),
+            )
+        );
+    }
+
+    println!("{}", footer.bold().green());
 }
 
 sol! {
@@ -66,23 +96,21 @@ sol! {
     #[sol(rpc)]
     contract Dipper {
         mapping(address => bool) public locks;
-        struct DestWallet {
+        struct SniperWallet {
             address addr;
-            uint256 amount;
+            uint256 ethAmount;
+            uint256 tokensAmount;
         }
-        function m1_dipper(
-            uint256 tokensMaxBag,
-            uint256 unclogEthAmount,
-            uint8 unclog_nloops,
+        function exploit(
+            uint8 maxRounds,
+            uint256 maxEthSpentOnExploit,
             uint256 minEthLiquidity,
-            uint256 bribe_good,
-            uint256 bribe_bad,
-            uint8 min_successfull_swaps,
-            address[] calldata good_validators,
-            DestWallet[] calldata destWallets,
+            uint256 swapThresholdTokens,
+            uint8 sniper_max_failed_swaps,
+            address pair,
             address[] calldata path,
-            address pair
-        ) external payable {}
+            SniperWallet[] calldata sniperWallets
+        ) external payable onlyOwner {}
         function removeLock(address tokenAddress) external {}
         function calculatePair(
             address tokenA,

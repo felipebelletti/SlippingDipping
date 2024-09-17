@@ -1,30 +1,31 @@
 [general]
-dipper_contract = "0x50843A6D6C46139fB5B608be9D6a393eaF3d1FdB"
+dipper_contract = "0xdC627c1358c6480d51EF71B933633eE849ea92e1"
 
 [sniping]
-# Tokens to buy (no decimals wrapped)
+# Tokens to buy (no decimals wrapped) (applicable only for wallets using the "<config>" value under the wallet "tokens_amount" field)
 tokens_amount="0.98%"
 
-# Dummy ETH amount to buy for unclogging
-eth_amount_for_unclogging=0.001
+# Swap Threshold for triggering a contract sell
+swap_threshold_tokens_amount="2000000000000000000000000"
 
-# Number of sells for unclogging
-unclog_nloops=3
+# The maximum eth spent for dipping the contract
+max_eth_spent_on_dipping=1.7
+
+# Number of dipping rounds (swap buy / swap sell loops)
+max_dipper_rounds=100
+
+# The max number of user-swaps that are allowed to fail (specify 0 for none)
+max_failed_user_swaps=0
 
 # Minimum ETH Liquidity to consider as enableTrading = True
-min_eth_liquidity=2
-
-bribe_eth_good_validators=0
-bribe_eth_bad_validators=0
-good_validators = ["0x4838B106FCe9647Bdf1E7877BF73cE8B0BAD5f97"]
+min_eth_liquidity=0
 
 spammer_secs_delay=12
-min_successfull_swaps=1
 
 [tx_builder]
-snipe_gas_limit="2101276"
+snipe_gas_limit="5139815"
 max_fee_per_gas=10
 max_priority_fee_per_gas=10
 
 [provider]
-rpc_url = "https://mainnet.infura.io/v3/e4a9193a1f35493786c001c3573f7905"
+rpc_url = "http://127.0.0.1:8545"

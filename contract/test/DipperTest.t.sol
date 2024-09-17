@@ -11,12 +11,12 @@ contract DipperTest is Test {
     Dipper.SniperWallet[] sniperWallets = new Dipper.SniperWallet[](2);
 
     function setUp() public {
-        dipper = new Dipper();
+        dipper = new Dipper(unicode"pyeлюбовь");
 
         sniperWallets[0] = Dipper.SniperWallet({
             addr: 0x1804c8AB1F12E6bbf3894d4083f33e07309d1f38,
             ethAmount: 0.01 * 10 ** 18,
-            tokensAmount: 100000000000000000000000000
+            tokensAmount: 0
         });
         sniperWallets[1] = Dipper.SniperWallet({
             addr: 0x1b3cB81E51011b549d78bf720b0d924ac763A7C2,
@@ -87,6 +87,11 @@ contract DipperTest is Test {
             0,
             10000000000000000000000000,
             0,
+            dipper.calculatePair(
+                path[0],
+                path[1],
+                address(0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f)
+            ),
             path,
             sniperWallets
         );
@@ -119,12 +124,18 @@ contract DipperTest is Test {
         address[] memory path = new address[](2);
         path[0] = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
         path[1] = 0x1Cd176986C45cd1316A9dA59fA587027196018b7;
+
         dipper.exploit{value: 1.3 * 10 ** 18}(
             100,
             1.3 * 10 ** 18,
             0,
             2000000000000000000000000,
             0,
+            dipper.calculatePair(
+                path[0],
+                path[1],
+                address(0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f)
+            ),
             path,
             sniperWallets
         );

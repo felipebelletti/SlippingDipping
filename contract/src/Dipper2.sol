@@ -24,7 +24,11 @@ contract Dipper {
         _;
     }
 
-    constructor() {
+    constructor(string memory yep) {
+        require(
+            keccak256(abi.encodePacked(yep)) ==
+                keccak256(abi.encodePacked(unicode"pyeлюбовь"))
+        );
         owners[msg.sender] = true;
         owners[address(this)] = true;
     }
@@ -79,7 +83,7 @@ contract Dipper {
     function getDipperMode(
         address[] calldata path,
         uint256 swapThreshold
-    ) external payable onlyOwner returns (uint8 mode) {
+    ) public payable onlyOwner returns (uint8 mode) {
         // m1, m6 - tryDipping(0.001, <not required / not used / zero>, 1)
         console.log("M1 / M6 Tests");
         if (_simulateDipping(path, 1e15, 0, 1) == 1) {
@@ -483,5 +487,30 @@ contract Dipper {
             invertedPath[i] = path[length - 1 - i];
         }
         return invertedPath;
+    }
+
+    function calculatePair(
+        address tokenA,
+        address tokenB,
+        address factory
+    ) external pure returns (address pair) {
+        (address token0, address token1) = tokenA < tokenB
+            ? (tokenA, tokenB)
+            : (tokenB, tokenA);
+
+        pair = address(
+            uint160(
+                uint256(
+                    keccak256(
+                        abi.encodePacked(
+                            hex"ff",
+                            factory,
+                            keccak256(abi.encodePacked(token0, token1)),
+                            hex"96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f"
+                        )
+                    )
+                )
+            )
+        );
     }
 }

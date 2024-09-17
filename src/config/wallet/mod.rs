@@ -1,10 +1,19 @@
-mod types;
+pub mod types;
+
+use crate::api::utils::erc20::get_percentage_token_supply;
 
 use self::types::{Wallet, WalletCollection};
-use alloy::{primitives::U256, signers::local::PrivateKeySigner};
+use alloy::{
+    primitives::{utils::parse_units, U256},
+    providers::Provider,
+    signers::local::PrivateKeySigner,
+};
 use anyhow::{anyhow, Error};
 use lazy_static::lazy_static;
-use std::{fs, str::FromStr};
+use revm::primitives::Address;
+use std::{fs, str::FromStr, sync::Arc};
+
+use super::general::GLOBAL_CONFIG;
 
 lazy_static! {
     pub static ref GLOBAL_WALLETS: WalletCollection =
@@ -51,5 +60,46 @@ impl WalletCollection {
         }
 
         Ok(WalletCollection { wallets })
+    }
+
+    pub async fn resolve_tokens_amount<M: Provider>(
+        self,
+        client: Arc<M>,
+        token_address: Address,
+        decimals: &u8,
+    ) -> WalletCollection {
+        let mut wallets = self.wallets.clone();
+
+        for wallet in wallets.iter_mut() {
+            if wallet.tokens_amount == "" {
+                wallet.tokens_amount_in_wei = U256::from(0);
+                continue;
+            }
+
+            if wallet.tokens_amount == "<config>" {
+                wallet.tokens_amount = GLOBAL_CONFIG.sniping.tokens_amount.clone();
+            }
+
+            let tokens_amount = if wallet.tokens_amount.contains("%") {
+                let percentage = wallet
+                    .tokens_amount
+                    .trim_end_matches('%')
+                    .parse::<f64>()
+                    .unwrap();
+                get_percentage_token_supply(&client, token_address, percentage).await
+            } else {
+                parse_units(&wallet.tokens_amount.to_string(), *decimals)
+                    .expect(&format!(
+                        "parse_units({}, {})",
+                        &wallet.tokens_amount.to_string(),
+                        decimals
+                    ))
+                    .into()
+            };
+
+            wallet.tokens_amount_in_wei = tokens_amount;
+        }
+
+        return WalletCollection { wallets };
     }
 }
