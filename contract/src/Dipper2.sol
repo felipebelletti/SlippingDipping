@@ -30,6 +30,8 @@ contract Dipper {
 
     receive() external payable {}
 
+    event dipperCostReport(uint256 dipperCost);
+
     function validatePair(
         address src,
         address pairAddress,
@@ -51,17 +53,15 @@ contract Dipper {
 
     function exploit(
         uint8 maxRounds,
+        uint256 maxEthSpentOnExploit,
         uint256 minEthLiquidity,
         uint256 swapThresholdTokens,
+        uint8 sniper_max_failed_swaps,
         // address pair,
-        address[] calldata path
-    )
-        public
-        payable
-        // SniperWallet[] calldata sniperWallets,
-        onlyOwner
-    {
-        // require(!locks[path[path.length - 1]], "Locked");
+        address[] calldata path,
+        SniperWallet[] calldata sniperWallets
+    ) public payable onlyOwner {
+        require(!locks[path[path.length - 1]], "Locked");
 
         // validatePair(path[path.length - 2], pair, minEthLiquidity);
 
@@ -77,10 +77,21 @@ contract Dipper {
                 path,
                 0,
                 swapThresholdTokens,
-                msg.value,
+                maxEthSpentOnExploit,
                 maxRounds
             );
         }
+
+        _buyTokenBySniperWallets(path, sniperWallets, sniper_max_failed_swaps);
+
+        uint256 leftoverEth = address(this).balance;
+        if (leftoverEth > 0) {
+            console.log("Refunding left-over ETH:", leftoverEth);
+            (bool success, ) = payable(tx.origin).call{value: leftoverEth}("");
+            require(success, "Refund failed");
+        }
+
+        locks[path[path.length - 1]] = true;
     }
 
     function getDipperMode(
@@ -194,6 +205,8 @@ contract Dipper {
         (uint256 initialClogged, ) = getCloggedPercentageAndRawAmount(token);
         console.log("initialClogged: ", initialClogged);
 
+        uint256 initialEthBalance = address(this).balance;
+
         try
             extRouter.swapExactETHForTokensSupportingFeeOnTransferTokens{
                 value: 0.01 * 10 ** 18
@@ -243,6 +256,7 @@ contract Dipper {
                 console.log(
                     "Clogged Percentage is lower than the target clogged percentage. We're done."
                 );
+                emit dipperCostReport(initialEthBalance - address(this).balance);
                 return;
             }
 
@@ -252,10 +266,8 @@ contract Dipper {
                     roundUncloggedPercentage,
                     ". Which means the unclogging is not being effective anymore. We're done."
                 );
+                emit dipperCostReport(initialEthBalance - address(this).balance);
                 return;
-                // revert(
-                //     "xpl1_6: We're not being effective, and I don't like that."
-                // );
             }
         }
 
@@ -288,7 +300,7 @@ contract Dipper {
                 ethSpent < maxEthSpent,
                 string(
                     abi.encodePacked(
-                        "Total Eth consumption is above our threshold. at ",
+                        "ETH Consumption is above our threshold. counter=",
                         i
                     )
                 )
@@ -344,6 +356,7 @@ contract Dipper {
                 console.log(
                     "Clogged Percentage is lower than the target clogged percentage. We're done."
                 );
+                emit dipperCostReport(initialEthBalance - address(this).balance);
                 return;
             }
 
@@ -353,14 +366,20 @@ contract Dipper {
                     roundUncloggedPercentage,
                     ". Which means the unclogging is not being effective anymore. We're done."
                 );
+                emit dipperCostReport(initialEthBalance - address(this).balance);
                 return;
-                // revert(
-                //     "xpl2_3_4_5: We're not being effective, and I don't like that."
-                // );
             }
         }
 
         revert("xpl2_3_4_5: Sorry, we could not, but at least we tried.");
+    }
+
+    function removeLock(address tokenAddress) external onlyOwner {
+        delete locks[tokenAddress];
+    }
+
+    function toggleOwner(address _owner, bool _state) external onlyOwner {
+        owners[_owner] = _state;
     }
 
     ////////     SNIPER     ////////
@@ -378,11 +397,15 @@ contract Dipper {
         ) {
             if (sniperwallets[walletIdx].tokensAmount == 0) {
                 // exactEth
-                uint[] memory amounts = extRouter.getAmountsOut(sniperwallets[walletIdx].ethAmount, path);
-                uint256 minTokensOut = amounts[1] * 30 / 100; // 70% slippage
+                uint[] memory amounts = extRouter.getAmountsOut(
+                    sniperwallets[walletIdx].ethAmount,
+                    path
+                );
+                uint256 minTokensOut = (amounts[1] * 30) / 100; // 70% slippage
 
                 try
-                    extRouter.swapExactETHForTokensSupportingFeeOnTransferTokens{
+                    extRouter
+                        .swapExactETHForTokensSupportingFeeOnTransferTokens{
                         value: sniperwallets[walletIdx].ethAmount
                     }(
                         minTokensOut,
