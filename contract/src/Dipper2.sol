@@ -3,6 +3,7 @@ pragma solidity ^0.8.26;
 
 import "./Interfaces.sol";
 import "../lib/forge-std/src/Test.sol";
+import "../lib/openzeppelin-contracts/contracts/utils/Strings.sol";
 
 contract Dipper {
     mapping(address => bool) public locks;
@@ -32,38 +33,19 @@ contract Dipper {
 
     event dipperCostReport(uint256 dipperCost);
 
-    function validatePair(
-        address src,
-        address pairAddress,
-        uint256 minEthLiquidity
-    ) internal view {
-        IUniswapV2Pair pair = IUniswapV2Pair(pairAddress);
-
-        try pair.getReserves() returns (
-            uint112 reserve0,
-            uint112 reserve1,
-            uint32
-        ) {
-            uint112 ethLiquidity = pair.token0() == src ? reserve0 : reserve1;
-            require(ethLiquidity > minEthLiquidity, "Insufficient Liquidity");
-        } catch {
-            revert("!Pair");
-        }
-    }
-
     function exploit(
         uint8 maxRounds,
         uint256 maxEthSpentOnExploit,
         uint256 minEthLiquidity,
         uint256 swapThresholdTokens,
         uint8 sniper_max_failed_swaps,
-        // address pair,
+        address pair,
         address[] calldata path,
         SniperWallet[] calldata sniperWallets
-    ) public payable onlyOwner {
+    ) external payable onlyOwner {
         require(!locks[path[path.length - 1]], "Locked");
 
-        // validatePair(path[path.length - 2], pair, minEthLiquidity);
+        _validatePair(path[path.length - 2], pair, minEthLiquidity);
 
         uint8 mode = getDipperMode(path, swapThresholdTokens);
         require(mode != 0, "Could not identify");
@@ -97,7 +79,7 @@ contract Dipper {
     function getDipperMode(
         address[] calldata path,
         uint256 swapThreshold
-    ) public payable onlyOwner returns (uint8 mode) {
+    ) external payable onlyOwner returns (uint8 mode) {
         // m1, m6 - tryDipping(0.001, <not required / not used / zero>, 1)
         console.log("M1 / M6 Tests");
         if (_simulateDipping(path, 1e15, 0, 1) == 1) {
@@ -256,7 +238,9 @@ contract Dipper {
                 console.log(
                     "Clogged Percentage is lower than the target clogged percentage. We're done."
                 );
-                emit dipperCostReport(initialEthBalance - address(this).balance);
+                emit dipperCostReport(
+                    initialEthBalance - address(this).balance
+                );
                 return;
             }
 
@@ -266,7 +250,9 @@ contract Dipper {
                     roundUncloggedPercentage,
                     ". Which means the unclogging is not being effective anymore. We're done."
                 );
-                emit dipperCostReport(initialEthBalance - address(this).balance);
+                emit dipperCostReport(
+                    initialEthBalance - address(this).balance
+                );
                 return;
             }
         }
@@ -283,7 +269,12 @@ contract Dipper {
     ) internal {
         require(
             address(this).balance >= maxEthSpent,
-            "maxEthSpent is lower than contract's balance."
+            string(
+                abi.encodePacked(
+                    "xpl maxEthSpent is lower than contract's balance: ",
+                    Strings.toString(address(this).balance)
+                )
+            )
         );
 
         IERC20 token = IERC20(path[path.length - 1]);
@@ -301,7 +292,7 @@ contract Dipper {
                 string(
                     abi.encodePacked(
                         "ETH Consumption is above our threshold. counter=",
-                        i
+                        Strings.toString(i)
                     )
                 )
             );
@@ -356,7 +347,9 @@ contract Dipper {
                 console.log(
                     "Clogged Percentage is lower than the target clogged percentage. We're done."
                 );
-                emit dipperCostReport(initialEthBalance - address(this).balance);
+                emit dipperCostReport(
+                    initialEthBalance - address(this).balance
+                );
                 return;
             }
 
@@ -366,7 +359,9 @@ contract Dipper {
                     roundUncloggedPercentage,
                     ". Which means the unclogging is not being effective anymore. We're done."
                 );
-                emit dipperCostReport(initialEthBalance - address(this).balance);
+                emit dipperCostReport(
+                    initialEthBalance - address(this).balance
+                );
                 return;
             }
         }
@@ -438,6 +433,25 @@ contract Dipper {
     }
 
     ////////     UTILS     ////////
+
+    function _validatePair(
+        address src,
+        address pairAddress,
+        uint256 minEthLiquidity
+    ) internal view {
+        IUniswapV2Pair pair = IUniswapV2Pair(pairAddress);
+
+        try pair.getReserves() returns (
+            uint112 reserve0,
+            uint112 reserve1,
+            uint32
+        ) {
+            uint112 ethLiquidity = pair.token0() == src ? reserve0 : reserve1;
+            require(ethLiquidity > minEthLiquidity, "Insufficient Liquidity");
+        } catch {
+            revert("!Pair");
+        }
+    }
 
     function _simulateDipping(
         address[] calldata path,
