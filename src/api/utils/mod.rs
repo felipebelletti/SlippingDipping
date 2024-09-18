@@ -1,9 +1,11 @@
 pub mod dipper;
 pub mod erc20;
 
+use alloy::consensus::TxEnvelope;
 use colored::Colorize;
 use regex::Regex;
 use unicode_width::UnicodeWidthStr;
+use alloy::eips::eip2718::Encodable2718;
 
 fn strip_ansi_codes(s: &str) -> String {
     // Expressão regular para remover códigos ANSI
@@ -64,9 +66,18 @@ pub fn print_pretty_dashboard(header_text: &str, rows: Vec<String>) {
     for row in rows {
         // Padroniza a linha para a largura total menos 2 (espaços laterais)
         let padded_row = pad_to_width(&row, total_width - 2);
-        println!("{green_vertical_row_char} {} {green_vertical_row_char}", padded_row); // Adiciona um espaço antes e depois do conteúdo
+        println!(
+            "{green_vertical_row_char} {} {green_vertical_row_char}",
+            padded_row
+        ); // Adiciona um espaço antes e depois do conteúdo
     }
 
     // Exibe o rodapé
     println!("{}", footer.bold().green());
+}
+
+pub fn tx_envelope_to_raw_tx(envelope: TxEnvelope) -> Vec<u8> {
+    let mut encoded_tx = vec![];
+    envelope.encode_2718(&mut encoded_tx);
+    return encoded_tx;
 }

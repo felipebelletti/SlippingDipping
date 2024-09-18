@@ -9,6 +9,7 @@ use alloy::{
 use alloy_erc20::LazyToken;
 use revm::primitives::{keccak256, Bytes, U256};
 use std::{
+    ops::Add,
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
         Arc,
@@ -25,7 +26,9 @@ use dialoguer::{theme::ColorfulTheme, Input};
 
 use crate::{
     api::{
-        is_token_locked_on_dipper, unlock_token_on_dipper,
+        is_token_locked_on_dipper,
+        sell_stream::{self, types::{ApedWallet, ExtraCosts}},
+        unlock_token_on_dipper,
         utils::{dipper::extract_dipper_cost_report, print_pretty_dashboard},
     },
     config::{general::GLOBAL_CONFIG, wallet::GLOBAL_WALLETS},
@@ -136,7 +139,7 @@ pub async fn run<M: Provider + 'static>(client: Arc<M>) {
 
     let gas_limit = GLOBAL_CONFIG
         .tx_builder
-        .snipe_gas_limit
+        .dipper_gas_limit
         .parse::<u128>()
         .unwrap();
 
@@ -262,6 +265,7 @@ pub async fn run<M: Provider + 'static>(client: Arc<M>) {
 
                 handle_successful_snipe(
                     client,
+                    target_token_address,
                     receipt,
                     dipper.address().clone(),
                     total_gas_spent_eth,
@@ -289,21 +293,46 @@ pub async fn run<M: Provider + 'static>(client: Arc<M>) {
 
 async fn handle_successful_snipe<M: Provider + 'static>(
     client: Arc<M>,
+    token_address: Address,
     receipt: TransactionReceipt,
     dipper_address: Address,
     total_gas_spent_eth: f64,
 ) {
+    let dipper_block = receipt.block_number.unwrap();
+
+    let mut aped_wallets: Vec<ApedWallet> = vec![];
+    for wallet in GLOBAL_WALLETS.get_wallets() {
+        let balance_before_dipper_block = client
+            .get_balance(wallet.address)
+            .number(dipper_block - 1)
+            .await
+            .unwrap();
+        let balance_after_dipper_block = client
+            .get_balance(wallet.address)
+            .number(dipper_block)
+            .await
+            .unwrap();
+
+        aped_wallets.push(ApedWallet {
+            wallet: wallet.clone(),
+            aped_weth: format_ether(balance_before_dipper_block - balance_after_dipper_block)
+                .parse::<f64>()
+                .unwrap(),
+        })
+    }
+
     let maybe_dipper_cost_wei = extract_dipper_cost_report(receipt, dipper_address);
-    let dipper_cost_eth: String = {
+    let dipper_cost_eth_str: String = {
         if let Some(dipper_cost_wei) = maybe_dipper_cost_wei {
             format_ether(dipper_cost_wei)
         } else {
             "[unknown]".to_string()
         }
     };
+    let dipper_cost_eth_f64 = dipper_cost_eth_str.parse::<f64>().unwrap_or(0.0);
 
     let total_operation_cost_eth =
-        total_gas_spent_eth + dipper_cost_eth.parse::<f64>().unwrap_or(0.0);
+        total_gas_spent_eth + dipper_cost_eth_f64;
 
     print_pretty_dashboard(
         "Dipper Cost Report",
@@ -314,7 +343,7 @@ async fn handle_successful_snipe<M: Provider + 'static>(
             ),
             format!(
                 "➤ Dipping Cost (Buying and Selling bags): {:.4} ETH",
-                dipper_cost_eth.yellow()
+                dipper_cost_eth_str.yellow()
             ),
             format!(
                 "➤ Total Cost (Dipping + Gas): {:.4} ETH",
@@ -322,4 +351,10 @@ async fn handle_successful_snipe<M: Provider + 'static>(
             ),
         ],
     );
+
+    sell_stream::run(client, Some(token_address), Some(ExtraCosts {
+        aped_wallets: Some(aped_wallets),
+        dipper_cost_eth: Some(dipper_cost_eth_f64),
+        gas_cost_eth: Some(total_gas_spent_eth)
+    })).await;
 }

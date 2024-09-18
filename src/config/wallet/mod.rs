@@ -54,7 +54,7 @@ impl WalletCollection {
                 .private_key
                 .parse()
                 .map_err(|err| anyhow!("Invalid private key in wallets.json: {err}"))?;
-            wallet.signer = ethers_wallet.clone().into();
+            wallet.signer = Arc::new(ethers_wallet.clone().into());
             wallet.address = ethers_wallet.address();
             wallet.eth_amount_in_wei = U256::from_str(&format!("{:.0}", wallet.eth_amount * 1e18))
                 .map_err(|err| anyhow!("Invalid eth_amount in wallets.json: {err}"))?;

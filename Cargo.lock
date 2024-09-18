@@ -3183,6 +3183,7 @@ dependencies = [
  "chrono",
  "colored",
  "dialoguer",
+ "futures",
  "get_if_addrs",
  "hex",
  "lazy_static",

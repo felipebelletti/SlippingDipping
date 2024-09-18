@@ -8,10 +8,10 @@ dipper_contract = "0x23575a2985B3a7d1F91E85592E175b3Bef52Fa93"
 tokens_amount = "0.98%"
 
 # The token amount threshold that triggers a contract sell
-swap_threshold_tokens_amount = "2000000000000000000000000"
+swap_threshold_tokens_amount = "4206900000000000000"
 
 # The maximum amount of ETH to spend on dipping the contract
-max_eth_spent_on_dipping = 1.7
+max_eth_spent_on_dipping = 4
 
 # The maximum number of dipping rounds (swap buy/sell loops)
 max_dipper_rounds = 100
@@ -20,17 +20,23 @@ max_dipper_rounds = 100
 max_failed_user_swaps = 0
 
 # The minimum ETH liquidity required to consider that trading is enabled (enableTrading = True)
-min_eth_liquidity = 0
+min_eth_liquidity = 1
 
 # The expected percentage variation in liquidity pool after dipping (e.g., 50.0 for 50%)
-expected_lp_variation_after_dip = 40.0
+expected_lp_variation_after_dip = 20.0
 
 # The delay in seconds between spammer txs
 spammer_secs_delay = 12
 
 [tx_builder]
-# The gas limit for the dipper/snipe transaction
-snipe_gas_limit = "5139815"
+dipper_gas_limit = "8139815"
+
+# The gas limit for the snipe transaction
+snipe_gas_limit = "1000000"
+
+approve_gas_limit = "50000"
+
+sell_gas_limit = "1000000"
 
 # The maximum fee per gas in Gwei
 max_fee_per_gas = 10

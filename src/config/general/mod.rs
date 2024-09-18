@@ -32,10 +32,13 @@ pub struct SnipingConfig {
 
 #[derive(Debug, Deserialize)]
 pub struct TransactionBuilder {
+    pub dipper_gas_limit: String,
     pub snipe_gas_limit: String,
+    pub sell_gas_limit: String,
+    pub approve_gas_limit: String,
     pub max_fee_per_gas: f64,
     pub max_priority_fee_per_gas: f64,
-    pub gas_oracle: bool
+    pub gas_oracle: bool,
 }
 
 #[derive(Debug, Deserialize)]

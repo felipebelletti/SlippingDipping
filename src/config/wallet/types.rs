@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use alloy::{network::EthereumWallet, primitives::{Address, U256}};
 use serde::Deserialize;
 
@@ -7,7 +9,7 @@ pub struct Wallet {
     pub eth_amount: f64,
     pub tokens_amount: String,
     #[serde(skip_deserializing)]
-    pub signer: EthereumWallet,
+    pub signer: Arc<EthereumWallet>,
     #[serde(skip_deserializing)]
     pub address: Address,
     #[serde(skip_deserializing)]
