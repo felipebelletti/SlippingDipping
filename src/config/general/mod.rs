@@ -35,6 +35,7 @@ pub struct TransactionBuilder {
     pub snipe_gas_limit: String,
     pub max_fee_per_gas: f64,
     pub max_priority_fee_per_gas: f64,
+    pub gas_oracle: bool
 }
 
 #[derive(Debug, Deserialize)]

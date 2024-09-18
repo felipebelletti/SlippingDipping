@@ -1,7 +1,7 @@
 use alloy::{
     dyn_abi::{abi::decode, DynSolType, DynSolValue},
     primitives::{
-        utils::{format_ether, parse_ether, parse_units},
+        utils::{format_ether, format_units, parse_ether, parse_units},
         Address, Uint,
     },
     rpc::types::TransactionReceipt,
@@ -92,8 +92,7 @@ pub async fn run<M: Provider + 'static>(client: Arc<M>) {
         panic!("Expected LP variation after dip must be between 0.0 and 100.0");
     }
 
-    let expected_lp_variation_after_dip =
-        U256::from(expected_lp_variation_after_dip_f64 * 100.0);
+    let expected_lp_variation_after_dip = U256::from(expected_lp_variation_after_dip_f64 * 100.0);
     let max_eth_spent_on_dipping =
         parse_ether(&GLOBAL_CONFIG.sniping.max_eth_spent_on_dipping.to_string()).unwrap();
     let min_eth_liquidity =
@@ -115,14 +114,15 @@ pub async fn run<M: Provider + 'static>(client: Arc<M>) {
     )
     .unwrap();
 
-    let max_fee_per_gas = parse_units(&GLOBAL_CONFIG.tx_builder.max_fee_per_gas.to_string(), 9)
-        .unwrap()
-        .to_string()
-        .parse::<u128>()
-        .map_err(|err| format!("Error converting tx_builder->max_fee_per_gas into u128: {err}"))
-        .unwrap();
+    let max_fee_per_gas_wei_config =
+        parse_units(&GLOBAL_CONFIG.tx_builder.max_fee_per_gas.to_string(), 9)
+            .unwrap()
+            .to_string()
+            .parse::<u128>()
+            .map_err(|err| format!("Error converting tx_builder->max_fee_per_gas into u128: {err}"))
+            .unwrap();
 
-    let max_priority_fee_per_gas = parse_units(
+    let max_priority_fee_per_gas_wei_config = parse_units(
         &GLOBAL_CONFIG
             .tx_builder
             .max_priority_fee_per_gas
@@ -159,6 +159,34 @@ pub async fn run<M: Provider + 'static>(client: Arc<M>) {
 
         tokio::spawn(async move {
             let mut nonce = pending_nonce.lock().await;
+
+            let (max_fee_per_gas, max_priority_fee_per_gas) = {
+                if GLOBAL_CONFIG.tx_builder.gas_oracle {
+                    let fees = match client.estimate_eip1559_fees(None).await {
+                        Ok(fees) => (fees.max_fee_per_gas, fees.max_priority_fee_per_gas),
+                        Err(err) => {
+                            printlnt!("{}", format!("The estimate_eip1559_fees request failed. Therefore the transaction wasn't generated. Set `gas_oracle` under config.toml if that keeps happening a lot. Also remember to manually set the gas fees. {}", err));
+                            return;
+                        }
+                    };
+
+                    fees
+                } else {
+                    (
+                        max_fee_per_gas_wei_config,
+                        max_priority_fee_per_gas_wei_config,
+                    )
+                }
+            };
+
+            let formatted_max_fee_per_gas =
+                format_units(max_fee_per_gas, 9).unwrap_or("unknown".to_string());
+            let formatted_max_priority_fee_per_gas =
+                format_units(max_priority_fee_per_gas, 9).unwrap_or("unknown".to_string());
+
+            if GLOBAL_CONFIG.tx_builder.gas_oracle {
+                printlnt!("{}", format!("🌊🌊 Gas Oracle prices applied! MaxFeePerGas = {formatted_max_fee_per_gas}, MaxPriorityFee = {formatted_max_priority_fee_per_gas}").bright_cyan())
+            }
 
             let built_tx = dipper
                 .exploit(
@@ -214,8 +242,8 @@ pub async fn run<M: Provider + 'static>(client: Arc<M>) {
                 printlnt!(
                     "{}",
                     format!(
-                        "DIPPER SUCCESS | {} | Gas-Spent: {} ({:.4} ETH) | Total Spent on Gas: {:.4} ETH",
-                        receipt.transaction_hash, gas_used, gas_cost_in_eth, total_gas_spent_eth
+                        "DIPPER SUCCESS | {} | Gas-Spent: {} ({:.4} ETH) | Total Spent on Gas: {:.4} ETH | FeePerGas: {} | FeePriority: {}",
+                        receipt.transaction_hash, gas_used, gas_cost_in_eth, total_gas_spent_eth, formatted_max_fee_per_gas, formatted_max_priority_fee_per_gas
                     )
                     .green()
                 );
@@ -245,8 +273,8 @@ pub async fn run<M: Provider + 'static>(client: Arc<M>) {
             println!(
                 "{}",
                 format!(
-                    "Failed | {} | Gas-Spent: {} ({} ETH) | Total Spent on Gas: {} ETH",
-                    receipt.transaction_hash, gas_used, gas_cost_in_eth, total_gas_spent_eth
+                    "Failed | {} | Gas-Spent: {} ({} ETH) | Total Spent on Gas: {} ETH | FeePerGas: {} | FeePriority: {}",
+                    receipt.transaction_hash, gas_used, gas_cost_in_eth, total_gas_spent_eth, formatted_max_fee_per_gas, formatted_max_priority_fee_per_gas
                 )
                 .red()
             );

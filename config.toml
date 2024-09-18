@@ -1,6 +1,6 @@
 [general]
 # The address of the Dipper contract to interact with
-dipper_contract = "0x8bafb5c30cc3f31bdcd3f921998d7f21710dc525"
+dipper_contract = "0x23575a2985B3a7d1F91E85592E175b3Bef52Fa93"
 
 [sniping]
 # The amount of tokens to buy, specified as a percentage (e.g., "0.98%")
@@ -37,6 +37,9 @@ max_fee_per_gas = 10
 
 # The maximum priority fee per gas in Gwei
 max_priority_fee_per_gas = 10
+
+# Whether to use a Gas Oracle for fetching gas prices
+gas_oracle = true
 
 [provider]
 # The RPC URL of the Ethereum node provider
