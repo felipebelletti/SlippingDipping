@@ -88,7 +88,7 @@ async fn display_sell_stream<M: Provider + 'static>(
 
     let wallets = GLOBAL_WALLETS.get_wallets();
 
-    let mut latest_block = client.get_block_number().await.unwrap_or_default();
+    let mut latest_block = client.get_block_number().await.unwrap_or_default() - 1;
 
     check_and_approve(
         client.clone(),
@@ -102,7 +102,7 @@ async fn display_sell_stream<M: Provider + 'static>(
     loop {
         let current_block = client.get_block_number().await.unwrap_or_default();
 
-        if true {
+        if current_block > latest_block /*|| true*/ {
             latest_block = current_block;
 
             let mut total_token_balance_wei = U256::ZERO;
