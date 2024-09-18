@@ -84,7 +84,7 @@ contract Dipper {
         // console.log("WETHLPAfterDip: ", wethLpAfterDip);
         // console.log("wethLpVariationPercentage: ", wethLpVariationPercentage);
 
-        require(wethLpVariationPercentage >= expectedLpVariationAfterDip, "A little more affection was expected, tbh");
+        require(wethLpVariationPercentage >= expectedLpVariationAfterDip, abi.encodePacked("A little more affection was expected, tbh ", Strings.toString(wethLpVariationPercentage)););
 
         _buyTokenBySniperWallets(path, sniperWallets, sniper_max_failed_swaps);
 
