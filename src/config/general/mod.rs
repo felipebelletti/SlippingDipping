@@ -38,6 +38,7 @@ pub struct TransactionBuilder {
     pub approve_gas_limit: String,
     pub max_fee_per_gas: f64,
     pub max_priority_fee_per_gas: f64,
+    pub sell_slippage_percent: f64,
     pub gas_oracle: bool,
 }
 

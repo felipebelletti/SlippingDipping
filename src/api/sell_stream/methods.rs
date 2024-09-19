@@ -122,6 +122,21 @@ pub async fn sell_percentage_from_wallet<M: Provider + 'static>(
     let uniswap_router = UniswapV2Router01::new(*V2_ROUTER_ADDRESS, client.clone());
     let path = vec![token_address, *WETH_ADDRESS];
 
+    let amounts_out = uniswap_router
+        .getAmountsOut(amount_to_sell, path.clone())
+        .call()
+        .await
+        .map_err(|err| format!("Error getting amounts out: {}", err))?;
+
+    let expected_eth_amount = *amounts_out.amounts.last().unwrap();
+
+    if expected_eth_amount.is_zero() {
+        return Err("Expected ETH amount is zero, cannot proceed with swap".into());
+    }
+
+    let slippage_multiplier = U256::from(100u64 - GLOBAL_CONFIG.tx_builder.sell_slippage_percent as u64);
+    let amount_out_min = (expected_eth_amount * slippage_multiplier) / U256::from(100u64);
+
     let nonce = client
         .get_transaction_count(wallet_address)
         .await
@@ -136,7 +151,7 @@ pub async fn sell_percentage_from_wallet<M: Provider + 'static>(
         let mut swap_tx = uniswap_router
             .swapExactTokensForETHSupportingFeeOnTransferTokens(
                 amount_to_sell,
-                U256::ZERO, // TO:DO (slippage)
+                amount_out_min,
                 path,
                 wallet_address,
                 U256::MAX,
@@ -183,23 +198,4 @@ pub async fn sell_percentage_from_wallet<M: Provider + 'static>(
         .map_err(|err| format!("Error getting swap tx receipt: {err}"))?;
 
     Ok(receipt)
-
-    // match swap_tx {
-    //     Ok(tx) => {
-    //         printlnt!(
-    //             "Sell transaction sent for wallet {}: {}",
-    //             wallet_address,
-    //             tx.tx_hash()
-    //         );
-    //         let _receipt = tx.get_receipt().await.unwrap();
-    //         printlnt!("Sell transaction confirmed for wallet {}.", wallet_address);
-    //     }
-    //     Err(err) => {
-    //         printlnt!(
-    //             "Error selling tokens from wallet {}: {}",
-    //             wallet_address,
-    //             err
-    //         );
-    //     }
-    // }
 }

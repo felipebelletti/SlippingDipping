@@ -38,6 +38,8 @@ approve_gas_limit = "50000"
 
 sell_gas_limit = "1000000"
 
+sell_slippage_percent = 30.0
+
 # The maximum fee per gas in Gwei
 max_fee_per_gas = 10
 
