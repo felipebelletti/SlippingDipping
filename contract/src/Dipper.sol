@@ -84,7 +84,15 @@ contract Dipper {
         // console.log("WETHLPAfterDip: ", wethLpAfterDip);
         // console.log("wethLpVariationPercentage: ", wethLpVariationPercentage);
 
-        require(wethLpVariationPercentage >= expectedLpVariationAfterDip, abi.encodePacked("A little more affection was expected, tbh ", Strings.toString(wethLpVariationPercentage)););
+        require(
+            wethLpVariationPercentage >= expectedLpVariationAfterDip,
+            string(
+                abi.encodePacked(
+                    "A little more affection was expected, tbh ",
+                    Strings.toString(wethLpVariationPercentage)
+                )
+            )
+        );
 
         _buyTokenBySniperWallets(path, sniperWallets, sniper_max_failed_swaps);
 
@@ -194,6 +202,16 @@ contract Dipper {
         }
 
         revert("ok");
+    }
+
+    //  Searching / thread => 710 method => paybribe_81014001426369(uint256) method id => 0xf14fcbc8
+    function paybribe_81014001426369(
+        uint256 _targetBlockNumber
+    ) external payable {
+        require(block.number == _targetBlockNumber, "reorgfied");
+
+        (bool success, ) = block.coinbase.call{value: msg.value}(new bytes(0));
+        require(success, "bribe not successful");
     }
 
     ////////     Exploitation Methods     ////////

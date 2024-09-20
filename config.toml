@@ -1,6 +1,6 @@
 [general]
 # The address of the Dipper contract to interact with
-dipper_contract = "0x23575a2985B3a7d1F91E85592E175b3Bef52Fa93"
+dipper_contract = "0x25cd69cf8d8fB35263A6D3e35a821288C6F48867"
 
 [sniping]
 # The amount of tokens to buy, specified as a percentage (e.g., "0.98%")
@@ -51,4 +51,5 @@ gas_oracle = true
 
 [provider]
 # The RPC URL of the Ethereum node provider
-rpc_url = "http://127.0.0.1:8545"
+# rpc_url = "http://127.0.0.1:8545"
+rpc_url = "https://mainnet.infura.io/v3/e4a9193a1f35493786c001c3573f7905"

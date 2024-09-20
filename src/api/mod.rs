@@ -13,6 +13,7 @@ pub mod strategies;
 pub mod utils;
 pub mod simulate;
 pub mod sell_stream;
+pub mod mev_builders;
 
 pub async fn unlock_token_on_dipper<M: Provider>(
     dipper: &Dipper::DipperInstance<alloy::transports::BoxTransport, Arc<M>>,

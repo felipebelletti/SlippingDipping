@@ -1,11 +1,21 @@
 pub mod dipper;
 pub mod erc20;
 
-use alloy::consensus::TxEnvelope;
+use core::error;
+use std::sync::Arc;
+
+use alloy::eips::eip2718::Encodable2718;
+use alloy::network::{NetworkWallet, TransactionBuilder};
+use alloy::primitives::utils::parse_ether;
+use alloy::signers::local::PrivateKeySigner;
+use alloy::{consensus::TxEnvelope, providers::Provider};
 use colored::Colorize;
 use regex::Regex;
+use revm::primitives::U256;
 use unicode_width::UnicodeWidthStr;
-use alloy::eips::eip2718::Encodable2718;
+
+use crate::config::wallet::types::Wallet;
+use crate::{config::general::GLOBAL_CONFIG, Dipper};
 
 fn strip_ansi_codes(s: &str) -> String {
     // Expressão regular para remover códigos ANSI
@@ -80,4 +90,41 @@ pub fn tx_envelope_to_raw_tx(envelope: TxEnvelope) -> Vec<u8> {
     let mut encoded_tx = vec![];
     envelope.encode_2718(&mut encoded_tx);
     return encoded_tx;
+}
+
+pub async fn get_raw_bribe_tx<M: Provider>(
+    client: Arc<M>,
+    signer_wallet: Wallet,
+    bribe_amount: f64,
+    target_block_number: U256,
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let dipper = Dipper::new(GLOBAL_CONFIG.general.dipper_contract, client.clone());
+
+    let nonce = client
+        .get_transaction_count(signer_wallet.address)
+        .await
+        .map_err(|err| format!("Expected nonce: {err}"))?;
+
+    let estimate_eip1559_fees = client
+        .estimate_eip1559_fees(None)
+        .await
+        .map_err(|err| format!("estimate_eip1559_fees err: {err}"))?;
+
+    let tx = dipper
+        .paybribe_81014001426369(target_block_number)
+        .value(parse_ether(bribe_amount.to_string().as_ref()).unwrap())
+        .from(signer_wallet.address)
+        .nonce(nonce)
+        .gas(40804)
+        .max_priority_fee_per_gas(estimate_eip1559_fees.max_priority_fee_per_gas)
+        .max_fee_per_gas(estimate_eip1559_fees.max_fee_per_gas);
+
+    let raw_tx = tx_envelope_to_raw_tx(
+        tx.into_transaction_request()
+            .build(&signer_wallet.signer)
+            .await
+            .unwrap(),
+    );
+
+    Ok(raw_tx)
 }

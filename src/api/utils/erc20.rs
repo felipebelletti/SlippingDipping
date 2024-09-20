@@ -41,13 +41,13 @@ pub async fn get_percentage_token_supply<M: Provider>(
     tokens_amount
 }
 
-pub async fn approve_token<M: Provider>(
+pub async fn get_approve_raw_tx<M: Provider>(
     client: Arc<M>,
     wallet: Wallet,
     token_address: Address,
     spender: Address,
     estimate_gas: bool,
-) -> Result<TransactionReceipt, Box<dyn std::error::Error>> {
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     let token = ERC20::new(token_address, &client);
     let wallet_address: Address = wallet.address;
     let wallet_signer = wallet.signer;
@@ -94,6 +94,19 @@ pub async fn approve_token<M: Provider>(
                 .unwrap(),
         )
     };
+
+    Ok(encoded_tx)
+}
+
+pub async fn approve_token<M: Provider>(
+    client: Arc<M>,
+    wallet: Wallet,
+    token_address: Address,
+    spender: Address,
+    estimate_gas: bool,
+) -> Result<TransactionReceipt, Box<dyn std::error::Error>> {
+    let encoded_tx =
+        get_approve_raw_tx(client.clone(), wallet, token_address, spender, estimate_gas).await?;
 
     let tx = client
         .send_raw_transaction(&encoded_tx)
