@@ -95,15 +95,11 @@ pub fn tx_envelope_to_raw_tx(envelope: TxEnvelope) -> Vec<u8> {
 pub async fn get_raw_bribe_tx<M: Provider>(
     client: Arc<M>,
     signer_wallet: Wallet,
+    nonce: u64,
     bribe_amount: f64,
     target_block_number: U256,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     let dipper = Dipper::new(GLOBAL_CONFIG.general.dipper_contract, client.clone());
-
-    let nonce = client
-        .get_transaction_count(signer_wallet.address)
-        .await
-        .map_err(|err| format!("Expected nonce: {err}"))?;
 
     let estimate_eip1559_fees = client
         .estimate_eip1559_fees(None)

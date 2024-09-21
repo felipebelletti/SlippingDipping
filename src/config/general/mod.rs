@@ -27,7 +27,9 @@ pub struct SnipingConfig {
     pub max_dipper_rounds: u8,
     pub min_eth_liquidity: f64,
     pub spammer_secs_delay: f64,
-    pub swap_threshold_tokens_amount: U256
+    pub swap_threshold_tokens_amount: U256,
+    pub bribe_amount: f64,
+    pub dipper_using_eob: bool
 }
 
 #[derive(Debug, Deserialize)]

@@ -23,26 +23,47 @@ lazy_static! {
 
 pub struct Builder {
     pub name: String,
+    pub has_statistics_api: bool,
+    pub custom_default_send_bundle_method: Option<String>,
     rpc_url: String,
     end_of_block_method: Option<String>,
 }
 
 impl Builder {
-    pub fn new(rpc_url: &str) -> Builder {
+    pub fn new(rpc_url: &str, has_statistics_api: bool) -> Builder {
         let name = Builder::extract_name(rpc_url);
         return Builder {
             name,
             rpc_url: rpc_url.to_string(),
             end_of_block_method: None,
+            has_statistics_api: has_statistics_api,
+            custom_default_send_bundle_method: None,
         };
     }
 
-    pub fn new_with_eob(rpc_url: &str, eob_method: &str) -> Builder {
+    pub fn new_with_custom_method(
+        rpc_url: &str,
+        has_statistics_api: bool,
+        custom_method: String,
+    ) -> Builder {
+        let name = Builder::extract_name(rpc_url);
+        return Builder {
+            name,
+            rpc_url: rpc_url.to_string(),
+            end_of_block_method: None,
+            has_statistics_api: has_statistics_api,
+            custom_default_send_bundle_method: Some(custom_method),
+        };
+    }
+
+    pub fn new_with_eob(rpc_url: &str, eob_method: &str, has_statistics_api: bool) -> Builder {
         let name = Builder::extract_name(rpc_url);
         return Builder {
             name,
             rpc_url: rpc_url.to_string(),
             end_of_block_method: Some(eob_method.to_string()),
+            has_statistics_api: has_statistics_api,
+            custom_default_send_bundle_method: None,
         };
     }
 
@@ -63,10 +84,18 @@ impl Builder {
         params.txs = sanitize_txs(params.txs);
         params.block_number = sanitize_block_number(params.block_number);
 
+        let method = {
+            if let Some(ref method) = &self.custom_default_send_bundle_method {
+                method
+            } else {
+                &"eth_sendBundle".to_string()
+            }
+        };
+
         let payload = json!({
           "jsonrpc": "2.0",
           "id": 1,
-          "method": "eth_sendBundle",
+          "method": method,
           "params": [params]
         });
 
@@ -89,10 +118,24 @@ impl Builder {
             .send()
             .await?;
 
-        // println!("{}", response.text().await.unwrap());
+        let text = response.text().await.unwrap();
 
-        let response_json: BundleResponse = response.json().await?;
-        println!("{:?}", response_json);
+        let response_json: BundleResponse = match serde_json::from_str(&text) {
+            Ok(r) => r,
+            Err(err) => {
+                if !self.has_statistics_api {
+                    BundleResponse {
+                        id: 1,
+                        jsonrpc: "-1".to_string(),
+                        error: None,
+                        result: None,
+                    }
+                } else {
+                    println!("{:?} | {}", text, self.name);
+                    return Err(err.into());
+                }
+            }
+        };
 
         Ok(response_json)
     }
@@ -137,12 +180,17 @@ impl Builder {
             .send()
             .await?;
 
-        // let text = response.text().await.unwrap().clone();
-        // println!("{:?}", text);
-        // Err("asddas".into())
-
-        let response_json: BundleResponse = response.json().await?;
-        println!("{:?}", response_json);
+        let response_text = response.text().await.unwrap();
+        let response_json: BundleResponse = match serde_json::from_str(&response_text) {
+            Ok(r) => r,
+            Err(err) => {
+                println!(
+                    "Error decoding as BundleResponse: {:?} | {} | {}",
+                    &response_text, self.name, err
+                );
+                return Err(err.into());
+            }
+        };
 
         Ok(response_json)
     }

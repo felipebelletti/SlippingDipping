@@ -7,6 +7,10 @@ dipper_contract = "0x25cd69cf8d8fB35263A6D3e35a821288C6F48867"
 # Applicable only for wallets using the "<config>" value under the wallet's "tokens_amount" field
 tokens_amount = "0.98%"
 
+bribe_amount = 0.001
+
+dipper_using_eob = true
+
 # The token amount threshold that triggers a contract sell
 swap_threshold_tokens_amount = "4206900000000000000"
 

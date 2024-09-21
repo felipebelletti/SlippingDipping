@@ -187,11 +187,11 @@ async fn display_sell_stream<M: Provider + 'static>(
             if let Some(ref extra_costs) = maybe_extra_costs {
                 if let Some(dipper_cost) = extra_costs.dipper_cost_eth {
                     println!("➤ Dipper Cost: {:.4} ETH", dipper_cost);
-                    total_cost_eth += dipper_cost;
+                    // total_cost_eth += dipper_cost; read @todo-1234
                 }
                 if let Some(gas_cost) = extra_costs.gas_cost_eth {
                     println!("➤ Gas Cost: {:.4} ETH", gas_cost);
-                    total_cost_eth += gas_cost;
+                    // total_cost_eth += gas_cost; read @todo-1234
                 }
             }
 

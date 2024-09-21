@@ -19,6 +19,7 @@ pub struct SendBundleParams {
     pub refund_index: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none", rename = "refundRecipient")]
     pub refund_recipient: Option<Address>, // (Optional) Address, the address that will receive the ETH refund. Default, sender of the first transaction in the bundle
+    pub builders: Option<Vec<String>>,
 }
 
 impl Default for SendBundleParams {
@@ -32,6 +33,7 @@ impl Default for SendBundleParams {
             refund_percent: None,
             refund_index: None,
             refund_recipient: None,
+            builders: None,
         }
     }
 }
