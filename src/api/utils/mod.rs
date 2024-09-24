@@ -3,18 +3,22 @@ pub mod erc20;
 
 use core::error;
 use std::sync::Arc;
+use std::time::Duration;
 
 use alloy::eips::eip2718::Encodable2718;
 use alloy::network::{NetworkWallet, TransactionBuilder};
 use alloy::primitives::utils::parse_ether;
+use alloy::rpc::types::TransactionReceipt;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::{consensus::TxEnvelope, providers::Provider};
 use colored::Colorize;
 use regex::Regex;
-use revm::primitives::U256;
+use revm::primitives::{FixedBytes, U256};
+use tokio::time::sleep;
 use unicode_width::UnicodeWidthStr;
 
 use crate::config::wallet::types::Wallet;
+use crate::printlnt;
 use crate::{config::general::GLOBAL_CONFIG, Dipper};
 
 fn strip_ansi_codes(s: &str) -> String {
@@ -123,4 +127,45 @@ pub async fn get_raw_bribe_tx<M: Provider>(
     );
 
     Ok(raw_tx)
+}
+
+pub async fn get_tx_receipt<M: Provider + 'static>(
+    client: Arc<M>,
+    hash: FixedBytes<32>,
+    max_attempts: usize,
+    delay_between_requests: f64,
+    debug: bool
+) -> Option<TransactionReceipt> {
+    for attempt in 1..=max_attempts {
+        match client.get_transaction_receipt(hash).await {
+            Ok(Some(receipt)) => {
+                return Some(receipt);
+            }
+            Ok(None) => {
+                if debug {
+                    printlnt!(
+                        "Attempt {}/{}: Transaction receipt not yet available for tx: {}",
+                        attempt, max_attempts, hash
+                    );
+                }
+            }
+            Err(err) => {
+                printlnt!("Error getting transaction receipt: {err}");
+                return None;
+            }
+        }
+
+        if attempt < max_attempts {
+            sleep(Duration::from_secs_f64(delay_between_requests)).await;
+        }
+    }
+
+    if debug {
+        printlnt!(
+            "Exceeded maximum attempts ({}) to get transaction receipt for tx: {}",
+            max_attempts, hash
+        );
+    }
+
+    None
 }

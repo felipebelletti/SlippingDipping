@@ -1,9 +1,9 @@
 use alloy::primitives::Address;
+use anyhow::Error;
+use lazy_static::lazy_static;
 use revm::primitives::U256;
 use serde::Deserialize;
-use std::fs;
-use lazy_static::lazy_static;
-use anyhow::Error;
+use std::{fs, str::FromStr};
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
@@ -15,7 +15,7 @@ pub struct Config {
 
 #[derive(Debug, Deserialize)]
 pub struct GeneralConfig {
-    pub dipper_contract: Address
+    pub dipper_contract: Address,
 }
 
 #[derive(Debug, Deserialize)]
@@ -29,7 +29,8 @@ pub struct SnipingConfig {
     pub spammer_secs_delay: f64,
     pub swap_threshold_tokens_amount: U256,
     pub bribe_amount: f64,
-    pub dipper_using_eob: bool
+    pub dipper_using_eob: bool,
+    pub multi_wallet_mode: MultiWalletMode,
 }
 
 #[derive(Debug, Deserialize)]
@@ -50,8 +51,8 @@ pub struct ProviderConfig {
 }
 
 lazy_static! {
-    pub static ref GLOBAL_CONFIG: Config = Config::from_file("config.toml")
-        .expect("Failed to load config.toml");
+    pub static ref GLOBAL_CONFIG: Config =
+        Config::from_file("config.toml").expect("Failed to load config.toml");
 }
 
 impl Config {
@@ -59,5 +60,26 @@ impl Config {
         let contents = fs::read_to_string(path)?;
         let config: Config = toml::from_str(&contents)?;
         Ok(config)
+    }
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum MultiWalletMode {
+    MultiTx,
+    SingleTx,
+}
+
+impl FromStr for MultiWalletMode {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "multi_tx" => Ok(MultiWalletMode::MultiTx),
+            "single_tx" => Ok(MultiWalletMode::SingleTx),
+            _ => Err(anyhow::anyhow!(
+                "Invalid wallet mode. Choose between \"single_tx\" or \"multi_tx\"."
+            )),
+        }
     }
 }

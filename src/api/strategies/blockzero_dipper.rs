@@ -1,12 +1,13 @@
 use alloy::{
     contract::CallBuilder,
-    dyn_abi::{abi::decode, DynSolType, DynSolValue},
+    dyn_abi::{abi::decode, DynSolCall, DynSolType, DynSolValue},
     network::TransactionBuilder,
     primitives::{
         utils::{format_ether, format_units, parse_ether, parse_units},
         Address, Uint,
     },
     rpc::types::TransactionReceipt,
+    sol_types::SolCall,
     transports::BoxTransport,
 };
 use alloy_erc20::LazyToken;
@@ -44,14 +45,18 @@ use crate::{
         },
         unlock_token_on_dipper,
         utils::{
-            dipper::extract_dipper_cost_report, get_raw_bribe_tx, print_pretty_dashboard,
+            self, dipper::extract_dipper_cost_report, get_raw_bribe_tx, print_pretty_dashboard,
             tx_envelope_to_raw_tx,
         },
     },
-    config::{general::GLOBAL_CONFIG, wallet::GLOBAL_WALLETS},
-    globals::{V2_FACTORY_ADDRESS, WETH_ADDRESS},
+    config::{
+        general::{MultiWalletMode, GLOBAL_CONFIG},
+        wallet::{types::WalletCollection, GLOBAL_WALLETS},
+    },
+    globals::{V2_FACTORY_ADDRESS, V2_ROUTER_ADDRESS, WETH_ADDRESS},
     license, printlnt,
     Dipper::{self, exploitCall},
+    UniswapV2Router01, ERC20,
 };
 
 pub async fn run<M: Provider + 'static>(client: Arc<M>) {
@@ -65,8 +70,8 @@ pub async fn run<M: Provider + 'static>(client: Arc<M>) {
         .with_prompt("Token Address")
         .interact_text()
         .unwrap();
-    let target_token = LazyToken::new(target_token_address, &client);
-    let target_token_decimals = target_token.decimals().await.unwrap();
+    let target_token = ERC20::new(target_token_address, &client);
+    let target_token_decimals = target_token.decimals().call().await.unwrap()._0;
 
     license::send_telemetry_message(format!(
         "Running BlockZero Dipper targeting: {}",
@@ -85,7 +90,7 @@ pub async fn run<M: Provider + 'static>(client: Arc<M>) {
 
     let wallets = GLOBAL_WALLETS
         .clone()
-        .resolve_tokens_amount(client.clone(), target_token_address, target_token_decimals)
+        .resolve_tokens_amount(client.clone(), target_token_address, &target_token_decimals)
         .await;
 
     let predicted_pair_address = dipper
@@ -129,7 +134,7 @@ pub async fn run<M: Provider + 'static>(client: Arc<M>) {
     )
     .unwrap();
 
-    let spam_config = SpamConfig {
+    let mut spam_config = SpamConfig {
         client: client.clone(),
         dipper: dipper.clone(),
         dest_wallets: dest_wallets.clone(),
@@ -171,8 +176,27 @@ pub async fn run<M: Provider + 'static>(client: Arc<M>) {
         pending_nonce: Arc::new(Mutex::new(initial_nonce)),
     };
 
+    if let Ok(result) = target_token.transferDelayEnabled().call().await
+        && result.transferDelayEnabled
+    {
+        print_pretty_dashboard(
+            "TransferDelay Warning",
+            vec![
+                format!("Contract's TransferDelay is Enabled."),
+                format!(
+                    "Which means that we cannot swap more than once within the same transaction."
+                ),
+                format!("For bypassing that measure, multiwallet must be done via multi transactions using EOB"),
+                format!("So yeah, now we're using multi_wallet_mode = \"multi_tx\" and \"dipper_using_eob\" = true"),
+                format!("Additionally, we'll be only broadcasting our bundles to Titan")
+            ],
+        );
+        start_eob_spamming(spam_config, spam_state, wallets, true, false).await;
+        return;
+    }
+
     if GLOBAL_CONFIG.sniping.dipper_using_eob {
-        start_eob_spamming(spam_config, spam_state).await;
+        start_eob_spamming(spam_config, spam_state, wallets, false, true).await;
         return;
     }
 
@@ -200,7 +224,24 @@ struct SpamState {
     pending_nonce: Arc<Mutex<u64>>,
 }
 
-async fn start_eob_spamming<M: Provider + 'static>(config: SpamConfig<M>, state: SpamState) {
+async fn start_eob_spamming<M: Provider + 'static>(
+    config: SpamConfig<M>,
+    state: SpamState,
+    resolved_wallets: WalletCollection, // it'd be better if we had a resolved collection type, idk. something that could differ a normal wallet collection from a resolved one. that sounds really confusing
+    bypass_transfer_delay: bool, // when bypass_transfer_delay is specified, it forces multi-wallet and only broadcast txs to Titan, aka the one who has a realistic eob
+    include_pseudo_eob_builders: bool,
+) {
+    if bypass_transfer_delay && GLOBAL_WALLETS.get_wallets().len() <= 1 {
+        print_pretty_dashboard(
+            "Insufficient number of Wallets",
+        vec!["For bypassing the transferDelay measure, each wallet can only swap once.".to_string(), "".to_string(), "As the target contract might be inspecting the value of tx.origin, which is wallet[0], that wallet cannot be considered as a swapper wallet.".to_string(), "That means it won't receive any token, it will be solely responsible for calling the dipper tx.".to_string(), "".to_string(), "That being said, you **have to have** more than one wallet in wallets.json, otherwise there will be no swapper wallets.".to_string(), "".to_string(), "TLDR: Wallets.json must have more than one wallet specified.".to_string()]);
+        return;
+    }
+
+    if bypass_transfer_delay {
+        print_pretty_dashboard("Notice - Transfer Delay Bypass", vec!["Your main wallet (wallet[0] from wallets.json) won't be a swapper wallet, that means it won't receive any token.".to_string(), "".to_string(), "It will be solely responsible for calling the dipper method. Remember that.".to_string()]);
+    }
+
     loop {
         if state.success_flag.load(Ordering::SeqCst) {
             break;
@@ -208,7 +249,7 @@ async fn start_eob_spamming<M: Provider + 'static>(config: SpamConfig<M>, state:
 
         let client = config.client.clone();
         let dipper = config.dipper.clone();
-        let dest_wallets = config.dest_wallets.clone();
+        let mut dest_wallets = config.dest_wallets.clone();
         let success_flag = state.success_flag.clone();
         let target_token_address = config.target_token_address;
         let predicted_pair_address = config.predicted_pair_address;
@@ -217,8 +258,97 @@ async fn start_eob_spamming<M: Provider + 'static>(config: SpamConfig<M>, state:
         let min_eth_liquidity = config.min_eth_liquidity;
         let tx_value = config.tx_value;
         let gas_limit = config.gas_limit;
-
         let caller_wallet = GLOBAL_WALLETS.get_wallets()[0].clone();
+
+        let mut signed_multi_swap_txs: Vec<Vec<u8>> = vec![];
+        let mut signed_multi_swap_tx_hashes: Vec<FixedBytes<32>> = vec![];
+
+        if bypass_transfer_delay
+            || GLOBAL_CONFIG.sniping.multi_wallet_mode == MultiWalletMode::MultiTx
+        {
+            let router = UniswapV2Router01::new(*V2_ROUTER_ADDRESS, client.clone());
+            let (max_fee_per_gas, max_priority_fee_per_gas) = match client
+                .estimate_eip1559_fees(None)
+                .await
+            {
+                Ok(fees) => (fees.max_fee_per_gas, fees.max_priority_fee_per_gas),
+                Err(err) => {
+                    printlnt!("{}", format!("The estimate_eip1559_fees request failed. Therefore the transaction wasn't generated. Set `gas_oracle` under config.toml if that keeps happening a lot. Also remember to manually set the gas fees. {}", err));
+                    return;
+                }
+            };
+
+            let mut wallets_iter = resolved_wallets.get_wallets().iter();
+            let start_wallet_index = {
+                if bypass_transfer_delay {
+                    1 // main wallet is not a swapper
+                } else {
+                    0 // main wallet is a swapper
+                }
+            };
+
+            // @TODO: parallelize
+            for (index, dest_wallet) in dest_wallets.iter().enumerate() {
+                if index < start_wallet_index {
+                    println!("Skipping wallet index {}", index);
+                    continue;
+                }
+                println!("Processing wallet index {}", index);
+
+                let wallet = wallets_iter
+                    .find(|el| el.address == dest_wallet.addr)
+                    .unwrap();
+                let wallet_nonce = {
+                    let nonce = client.get_transaction_count(wallet.address).await.unwrap();
+
+                    // if we're setting the main wallet's nonce, we should make a room for the dipper and bribe payment txs
+                    // which would use the pending_nonce + 0 and + 1 slots
+                    // dipper_tx = main_wallet_nonce + 0 | bribe_tx = main_wallet_nonce + 1
+                    if index == 0 {
+                        nonce + 2
+                    } else {
+                        nonce
+                    }
+                };
+                let swap_tx_request = {
+                    if dest_wallet.tokensAmount.is_zero() {
+                        router
+                            .swapExactETHForTokensSupportingFeeOnTransferTokens(
+                                U256::ZERO,
+                                vec![*WETH_ADDRESS, target_token_address],
+                                wallet.address,
+                                U256::MAX,
+                            )
+                            .value(wallet.eth_amount_in_wei)
+                            .max_fee_per_gas(max_fee_per_gas)
+                            .max_priority_fee_per_gas(max_priority_fee_per_gas)
+                            .gas(GLOBAL_CONFIG.tx_builder.snipe_gas_limit.parse().unwrap())
+                            .nonce(wallet_nonce)
+                            .into_transaction_request()
+                    } else {
+                        router
+                            .swapETHForExactTokens(
+                                dest_wallet.tokensAmount,
+                                vec![*WETH_ADDRESS, target_token_address],
+                                wallet.address,
+                                U256::MAX,
+                            )
+                            .value(wallet.eth_amount_in_wei)
+                            .max_fee_per_gas(max_fee_per_gas)
+                            .max_priority_fee_per_gas(max_priority_fee_per_gas)
+                            .gas(GLOBAL_CONFIG.tx_builder.snipe_gas_limit.parse().unwrap())
+                            .nonce(wallet_nonce)
+                            .into_transaction_request()
+                    }
+                };
+                let swap_tx_envelope = swap_tx_request.build(&wallet.signer).await.unwrap();
+                if GLOBAL_CONFIG.sniping.max_failed_user_swaps > index as u8 {
+                    signed_multi_swap_tx_hashes.push(swap_tx_envelope.tx_hash().clone())
+                }
+                signed_multi_swap_txs.push(tx_envelope_to_raw_tx(swap_tx_envelope));
+            }
+            dest_wallets = vec![];
+        }
 
         tokio::spawn(async move {
             let target_block_number = client.get_block_number().await.unwrap() + 2;
@@ -239,6 +369,7 @@ async fn start_eob_spamming<M: Provider + 'static>(config: SpamConfig<M>, state:
             };
 
             let (encoded_dipper_tx, dipper_tx_hash) = {
+                // encoded_bribe_txs uses main_wallet_nonce + 0
                 let dipper_tx = build_dipper_transaction(
                     &dipper,
                     nonce,
@@ -264,6 +395,7 @@ async fn start_eob_spamming<M: Provider + 'static>(config: SpamConfig<M>, state:
                 (tx_envelope_to_raw_tx(signed_tx), tx_hash)
             };
 
+            // encoded_bribe_txs uses main_wallet_nonce + 1
             let encoded_bribe_tx = get_raw_bribe_tx(
                 client.clone(),
                 caller_wallet.clone(),
@@ -274,68 +406,107 @@ async fn start_eob_spamming<M: Provider + 'static>(config: SpamConfig<M>, state:
             .await
             .unwrap();
 
-            let pseudo_eob_task = mev_builders::broadcast::broadcast_bundle(
-                SendBundleParams {
-                    txs: vec![hex::encode(encoded_dipper_tx.clone())],
-                    block_number: Some(format!("0x{:x}", target_block_number)),
-                    reverting_tx_hashes: Some(vec![dipper_tx_hash]),
-                    builders: Some(vec![
-                        "flashbots".to_string(),
-                        "f1b.io".to_string(),
-                        "rsync".to_string(),
-                        // "beaverbuild.org".to_string(), // removed on purpose, we dont want beaver
-                        "builder0x69".to_string(),
-                        // "Titan".to_string(), // removed on purpose, Titan covers eob
-                        "EigenPhi".to_string(),
-                        "boba-builder".to_string(),
-                        "Gambit Labs".to_string(),
-                        "payload".to_string(),
-                        "Loki".to_string(),
-                        "BuildAI".to_string(),
-                        "JetBuilder".to_string(),
-                        "tbuilder".to_string(),
-                        "penguinbuild".to_string(),
-                        "bobthebuilder".to_string(),
-                        "BTCS".to_string(),
-                        "bloXroute".to_string(),
-                    ]),
-                    ..Default::default()
-                },
-                mev_builders::PSEUDO_EOB_BUILDERS.to_vec(),
-            );
-
-            let eob_task = mev_builders::broadcast::broadcast_end_of_block_bundle(
-                EndOfBlockBundleParams {
-                    txs: vec![
-                        hex::encode(encoded_dipper_tx),
-                        hex::encode(encoded_bribe_tx),
-                    ],
-                    block_number: Some(format!("0x{:x}", target_block_number)),
-                    target_pools: Some(vec![predicted_pair_address]),
-                    reverting_tx_hashes: None,
-                },
-                BUILDERS.to_vec(),
-            );
-
-            let (result_pseudo_eob_task, result_eob_task) = join!(pseudo_eob_task, eob_task);
-
-            handle_task_result(result_pseudo_eob_task, &dipper_tx_hash, "Pseudo EoB Bundle");
-            handle_task_result(result_eob_task, &dipper_tx_hash, "Normal EoB Bundle");
-
-            let receipt = match client.get_transaction_receipt(dipper_tx_hash).await {
-                Ok(Some(receipt)) => receipt,
-                Ok(None) => {
-                    printlnt!(
-                        "{}",
-                        format!("Bundle not landed | {}", &dipper_tx_hash).red()
-                    );
-                    return;
-                }
-                Err(err) => {
-                    printlnt!("Error getting tx receipt: {err}");
-                    return;
+            let maybe_pseudo_eob_task = {
+                if include_pseudo_eob_builders {
+                    Some(mev_builders::broadcast::broadcast_bundle(
+                        SendBundleParams {
+                            txs: vec![hex::encode(encoded_dipper_tx.clone())],
+                            block_number: Some(format!("0x{:x}", target_block_number)),
+                            reverting_tx_hashes: Some(vec![dipper_tx_hash]),
+                            builders: Some(vec![
+                                "flashbots".to_string(),
+                                "f1b.io".to_string(),
+                                "rsync".to_string(),
+                                "builder0x69".to_string(),
+                                "EigenPhi".to_string(),
+                                "boba-builder".to_string(),
+                                "Gambit Labs".to_string(),
+                                "payload".to_string(),
+                                "Loki".to_string(),
+                                "BuildAI".to_string(),
+                                "JetBuilder".to_string(),
+                                "tbuilder".to_string(),
+                                "penguinbuild".to_string(),
+                                "bobthebuilder".to_string(),
+                                "BTCS".to_string(),
+                                "bloXroute".to_string(),
+                                // "beaverbuild.org".to_string(), // removed on purpose, we dont want beaver
+                                // "Titan".to_string(), // removed on purpose, Titan covers eob
+                            ]),
+                            ..Default::default()
+                        },
+                        mev_builders::PSEUDO_EOB_BUILDERS.to_vec(),
+                    ))
+                } else {
+                    None
                 }
             };
+
+            let eob_task = {
+                let mut txs: Vec<String> = vec![
+                    hex::encode(encoded_dipper_tx),
+                    hex::encode(encoded_bribe_tx),
+                ];
+                txs.extend(signed_multi_swap_txs.iter().map(|el| hex::encode(el)));
+
+                let mut reverting_tx_hashes: Vec<FixedBytes<32>> = vec![];
+                reverting_tx_hashes.extend(signed_multi_swap_tx_hashes);
+
+                #[cfg(debug_assertions)]
+                println!("{:?}", txs);
+                #[cfg(debug_assertions)]
+                println!("{:?}", reverting_tx_hashes);
+
+                mev_builders::broadcast::broadcast_end_of_block_bundle(
+                    EndOfBlockBundleParams {
+                        txs,
+                        block_number: Some(format!("0x{:x}", target_block_number)),
+                        target_pools: Some(vec![predicted_pair_address]),
+                        reverting_tx_hashes: Some(reverting_tx_hashes),
+                    },
+                    BUILDERS.to_vec(),
+                )
+            };
+
+            match maybe_pseudo_eob_task {
+                Some(pseudo_eob) => {
+                    let (result_pseudo_eob_task, result_eob_task) = join!(pseudo_eob, eob_task);
+                    handle_task_result(
+                        result_pseudo_eob_task,
+                        &dipper_tx_hash,
+                        "Pseudo EoB Bundle",
+                        target_block_number,
+                    );
+                    handle_task_result(
+                        result_eob_task,
+                        &dipper_tx_hash,
+                        "EoB Bundle",
+                        target_block_number,
+                    );
+                }
+                None => {
+                    // Caso contrário, apenas aguardamos a eob_task
+                    let result_eob_task = eob_task.await;
+                    handle_task_result(
+                        result_eob_task,
+                        &dipper_tx_hash,
+                        "EoB Bundle",
+                        target_block_number,
+                    );
+                }
+            }
+
+            let receipt =
+                match utils::get_tx_receipt(client.clone(), dipper_tx_hash, 12, 6.0, false).await {
+                    Some(receipt) => receipt,
+                    None => {
+                        printlnt!(
+                            "{}",
+                            format!("Bundle not landed | {}", &dipper_tx_hash).red()
+                        );
+                        return;
+                    }
+                };
 
             let gas_used = receipt.gas_used;
             let gas_price = receipt.effective_gas_price;
@@ -383,6 +554,7 @@ fn handle_task_result(
     task_results: HashMap<String, Result<BundleResult, String>>,
     tx_hash: &FixedBytes<32>,
     bundle_type: &str,
+    target_block_number: u64,
 ) {
     for (builder_name, result) in task_results {
         match result {
@@ -390,8 +562,12 @@ fn handle_task_result(
                 printlnt!(
                     "{}",
                     format!(
-                        "{} Sent | TxHash: {} | Bundle Hash: {} | Builder: {}",
-                        bundle_type, tx_hash, task_ok.bundle_hash, builder_name
+                        "{} Sent | TxHash: {} | Bundle Hash: {} | Builder: {} | Target Block: {}",
+                        bundle_type,
+                        tx_hash,
+                        task_ok.bundle_hash,
+                        builder_name,
+                        target_block_number
                     )
                     .yellow()
                 )
@@ -400,8 +576,8 @@ fn handle_task_result(
                 printlnt!(
                     "{}",
                     format!(
-                        "{} Error | Reason: {} | Builder: {}",
-                        bundle_type, err, builder_name
+                        "{} Error | Reason: {} | Builder: {} | Target Block: {}",
+                        bundle_type, err, builder_name, target_block_number
                     )
                     .red()
                 )

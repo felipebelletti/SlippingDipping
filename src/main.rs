@@ -69,68 +69,6 @@ async fn main() {
             .unwrap(),
     );
 
-    // let raw_tx = get_approve_raw_tx(
-    //     client.clone(),
-    //     GLOBAL_WALLETS.get_wallets()[0].clone(),
-    //     Address::from_str("0x0D448711759Ad1Bd147291b9F9f2E90434EfD8c8").unwrap(),
-    //     Address::from_str("0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D").unwrap(),
-    //     false,
-    // ).await.unwrap();
-    // mev_builders::broadcast::broadcast_end_of_block_bundle(EndOfBlockBundleParams {
-    //     txs: vec![format!("{}", hex::encode(raw_tx))],
-    //     // block_number: Some(format!("0x{}", hex::encode((client.get_block_number().await.unwrap() + 2).to_string()))),
-    //     block_number: Some("0x1".to_string()),
-    //     target_pools: Some(vec!["0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D".parse().unwrap()]),
-    //     ..Default::default()
-    // });
-    // let builder = &crate::api::mev_builders::RSYNC;
-    // loop {
-    //     let block_number = client.get_block_number().await.unwrap() + 2;
-
-    //     let raw_tx = get_approve_raw_tx(
-    //         client.clone(),
-    //         GLOBAL_WALLETS.get_wallets()[0].clone(),
-    //         Address::from_str("0x0D448711759Ad1Bd147291b9F9f2E90434EfD8c8").unwrap(),
-    //         Address::from_str("0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D").unwrap(),
-    //         false,
-    //     )
-    //     .await
-    //     .unwrap();
-
-    //     let bribe_raw_tx = get_raw_bribe_tx(
-    //         client.clone(),
-    //         GLOBAL_WALLETS.get_wallets()[0].clone(),
-    //         0.004,
-    //         U256::from(block_number),
-    //     )
-    //     .await
-    //     .unwrap();
-
-    //     println!("{}", block_number);
-
-    //     builder
-    //         .send_end_of_block_bundle(EndOfBlockBundleParams {
-    //             txs: vec![hex::encode(bribe_raw_tx), hex::encode(raw_tx)],
-    //             block_number: Some(format!("0x{:x}", block_number)),
-    //             // target_pools: Some(vec!["0xf74B0ab4eFDd5d97F936F4E3475D208b39e8Efc7".parse().unwrap()]),
-    //             // txs: vec!["0x02f8b2018201068434b646fb850599a1859f82c350940d448711759ad1bd147291b9f9f2e90434efd8c880b844095ea7b30000000000000000000000007a250d5630b4cf539739df2c5dacb4c659f2488dffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffc080a0b04fc1880effc420d89c4a740add63f43b9e5a7787c2813573df898d4ca0acbca06cf457a31bfa739a1937c630486328626793136cc8226939ac9a246bb097470e".to_string()],
-    //             ..Default::default()
-    //         })
-    //         .await
-    //         .unwrap();
-
-        // builder.send_bundle(SendBundleParams {
-        //     txs: vec![hex::encode(raw_tx)],
-        //     block_number: Some(format!("0x{:x}", block_number)),
-        //     // target_pools: Some(vec!["0xf74B0ab4eFDd5d97F936F4E3475D208b39e8Efc7".parse().unwrap()]),
-        //     // txs: vec!["0x02f8b2018201068434b646fb850599a1859f82c350940d448711759ad1bd147291b9f9f2e90434efd8c880b844095ea7b30000000000000000000000007a250d5630b4cf539739df2c5dacb4c659f2488dffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffc080a0b04fc1880effc420d89c4a740add63f43b9e5a7787c2813573df898d4ca0acbca06cf457a31bfa739a1937c630486328626793136cc8226939ac9a246bb097470e".to_string()],
-        //     ..Default::default()
-        // }).await.unwrap();
-
-        // sleep(Duration::from_secs(6)).await;
-    // }
-    // return;
-
     show_pretty_wallet_dashboard(client.clone(), GLOBAL_WALLETS.get_wallets()).await;
 
     let menu_option = FuzzySelect::with_theme(&ColorfulTheme::default())
@@ -207,6 +145,7 @@ sol! {
     #[sol(rpc)]
     contract Dipper {
         mapping(address => bool) public locks;
+        #[derive(Debug)]
         struct SniperWallet {
             address addr;
             uint256 ethAmount;
@@ -242,6 +181,7 @@ sol! {
         function balanceOf(address owner) external view returns (uint);
         function allowance(address owner, address spender) external view returns (uint);
         function approve(address spender, uint256 amount) external returns (bool);
+        bool public transferDelayEnabled = true;
     }
 
     #[allow(missing_docs)]
