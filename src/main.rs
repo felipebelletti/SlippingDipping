@@ -49,14 +49,14 @@ macro_rules! printlnt {
 
 #[tokio::main]
 async fn main() {
-    match license::check_license().await {
-        Ok(is_valid) => {
-            if !is_valid {
-                panic!("Error 309")
-            }
-        }
-        Err(_) => panic!("Error 300"),
-    }
+    // match license::check_license().await {
+    //     Ok(is_valid) => {
+    //         if !is_valid {
+    //             panic!("Error 309")
+    //         }
+    //     }
+    //     Err(_) => panic!("Error 300"),
+    // }
 
     show_motd();
 
@@ -68,6 +68,9 @@ async fn main() {
             .await
             .unwrap(),
     );
+
+    simulate::simulate(&client).await;
+    return
 
     show_pretty_wallet_dashboard(client.clone(), GLOBAL_WALLETS.get_wallets()).await;
 

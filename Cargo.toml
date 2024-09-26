@@ -6,7 +6,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-alloy = { version = "0.3.4", features = ["full", "network", "providers", "signer-keystore", "signer-local", "signers"] }
+alloy = { version = "0.3.4", features = ["full", "network", "node-bindings", "providers", "signer-keystore", "signer-local", "signers"] }
 alloy-erc20 = "0.2.1"
 anyhow = "1.0.88"
 chrono = "0.4.38"
@@ -19,7 +19,7 @@ md5 = "0.7.0"
 regex = "1.10.6"
 reqwest = { version = "0.12.7", features = ["gzip"] }
 openssl = { version = "0.10.61", features = ["vendored"] }
-revm = { version = "14.0.2", features = ["alloydb", "optional_block_gas_limit", "optional_no_base_fee"] }
+revm = { version = "14.0.2", features = ["alloydb", "optional_balance_check", "optional_block_gas_limit", "optional_no_base_fee"] }
 serde = "1.0.210"
 serde_json = "1.0.128"
 tokio = { version = "1.40.0", features = ["full"] }
