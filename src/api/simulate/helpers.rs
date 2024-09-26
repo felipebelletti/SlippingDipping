@@ -12,7 +12,7 @@ use anyhow::{anyhow, Result};
 use revm::{
     db::{AlloyDB, CacheDB},
     primitives::{ExecutionResult, Output, TransactTo},
-    DatabaseRef, Evm,
+    DatabaseCommit, DatabaseRef, Evm,
 };
 use revm::{
     primitives::{keccak256, AccountInfo, Bytecode},
@@ -69,28 +69,27 @@ pub fn build_tx(to: Address, from: Address, calldata: Bytes, base_fee: u128) -> 
         .into()
 }
 
-pub fn revm_call<DB: Database>(
+pub fn revm_call<'a, DB>(
+    evm: &mut Evm<'a, (), revm::db::WrapDatabaseRef<&'a mut DB>>,
     from: Address,
     to: Address,
     calldata: Bytes,
     value: U256,
-    cache_db: &mut DB,
-) -> Result<Bytes>
+) -> Result<Bytes, Box<dyn std::error::Error>>
 where
-    <DB as revm::Database>::Error: Debug,
+    DB: Database + revm::DatabaseRef,
+    <DB as Database>::Error: std::fmt::Debug,
+    <DB as DatabaseRef>::Error: Debug,
+    DB: DatabaseCommit,
 {
-    let mut evm = Evm::builder()
-        .with_db(cache_db)
-        .modify_tx_env(|tx| {
-            tx.caller = from;
-            tx.transact_to = TransactTo::Call(to);
-            tx.data = calldata;
-            tx.value = value;
-        })
-        .build();
+    evm.tx_mut().caller = from;
+    evm.tx_mut().transact_to = TransactTo::Call(to);
+    evm.tx_mut().data = calldata;
+    evm.tx_mut().value = value;
 
-    let ref_tx = evm.transact().unwrap();
-    let result = ref_tx.result;
+    // let ref_tx = evm.transact().unwrap();
+    // let result = ref_tx.result;
+    let result = evm.transact_commit().unwrap();
 
     let value = match result {
         ExecutionResult::Success {
@@ -98,7 +97,7 @@ where
             ..
         } => value,
         result => {
-            return Err(anyhow!("execution failed: {result:?}"));
+            return Err(anyhow!("execution failed: {result:?}").into());
         }
     };
 
@@ -136,22 +135,22 @@ where
     Ok(value)
 }
 
-pub async fn init_account_with_bytecode(
-    address: Address,
-    bytecode: Bytecode,
-    cache_db: &mut AlloyCacheDB,
-) -> Result<()> {
-    let code_hash = bytecode.hash_slow();
-    let acc_info = AccountInfo {
-        balance: U256::ZERO,
-        nonce: 0_u64,
-        code: Some(bytecode),
-        code_hash,
-    };
-
-    cache_db.insert_account_info(address, acc_info);
-    Ok(())
-}
+//pub async fn init_account_with_bytecode<DB: DatabaseRef>(
+//    address: Address,
+//    bytecode: Bytecode,
+//    cache_db: &mut DB,
+//) -> Result<()> {
+//    let code_hash = bytecode.hash_slow();
+//    let acc_info = AccountInfo {
+//        balance: U256::ZERO,
+//        nonce: 0_u64,
+//        code: Some(bytecode),
+//        code_hash,
+//    };
+//
+//    cache_db.insert_account_info(address, acc_info);
+//    Ok(())
+//}
 
 pub async fn insert_mapping_storage_slot<Backend>(
     contract: Address,

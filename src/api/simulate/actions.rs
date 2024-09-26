@@ -7,7 +7,7 @@ use dialoguer::Input;
 use hex::FromHex;
 // Import necessary crates and modules at the top
 use revm::primitives::{Address, Bytes, U256};
-use revm::{Database, Evm};
+use revm::{Database, DatabaseCommit, DatabaseRef, Evm};
 
 use crate::globals::{V2_FACTORY_ADDRESS, V2_ROUTER_ADDRESS};
 use crate::Dipper::calculatePairCall;
@@ -18,17 +18,21 @@ use crate::ERC20::{approveCall, balanceOfCall, decimalsCall};
 use super::actors::me;
 use super::helpers::{bytes_to_address, bytes_to_u256, revm_call};
 
-pub fn add_liquidity<DB: Database>(
+pub fn add_liquidity<'a, DB>(
+    evm: &mut Evm<'a, (), revm::db::WrapDatabaseRef<&'a mut DB>>,
     owner_address: Address,
     target_token: Address,
     add_lp_tokens: U256,
     add_lp_eth: U256,
-    cache_db: &mut DB,
 ) -> Result<Bytes, Box<dyn std::error::Error>>
 where
-    <DB as revm::Database>::Error: Debug,
+    DB: Database + revm::DatabaseRef,
+    <DB as Database>::Error: std::fmt::Debug,
+    <DB as DatabaseRef>::Error: Debug,
+    DB: DatabaseCommit,
 {
     let result = revm_call(
+        evm,
         owner_address,
         *V2_ROUTER_ADDRESS,
         Bytes::from(
@@ -43,21 +47,23 @@ where
             .abi_encode(),
         ),
         U256::from(add_lp_eth),
-        cache_db,
     )?;
 
     Ok(result)
 }
 
-pub fn enable_trading<DB: Database>(
+pub fn enable_trading<'a, DB>(
+    evm: &mut Evm<'a, (), revm::db::WrapDatabaseRef<&'a mut DB>>,
     owner_address: Address,
     target_token: Address,
     maybe_method_id: Option<String>,
     maybe_value: Option<U256>,
-    cache_db: &mut DB,
 ) -> Result<Bytes, Box<dyn std::error::Error>>
 where
-    <DB as revm::Database>::Error: Debug,
+    DB: Database + revm::DatabaseRef,
+    <DB as Database>::Error: std::fmt::Debug,
+    <DB as DatabaseRef>::Error: Debug,
+    DB: DatabaseCommit,
 {
     let enable_trading_method_id = maybe_method_id.unwrap_or_else(|| {
         Input::with_theme(&ColorfulTheme::default())
@@ -72,6 +78,7 @@ where
         .unwrap_or_else(|| Vec::from_hex(&enable_trading_method_id).unwrap());
 
     let result = revm_call(
+        evm,
         owner_address,
         target_token,
         Bytes::from(enable_trading_calldata),
@@ -82,49 +89,49 @@ where
                 .unwrap();
             parse_ether(eth_lp_f64.to_string().as_str()).unwrap()
         }),
-        cache_db,
     )?;
 
     Ok(result)
 }
 
-pub fn transfer_erc20_tokens<DB: Database>(
+pub fn transfer_erc20_tokens<'a, DB>(
+    evm: &mut Evm<'a, (), revm::db::WrapDatabaseRef<&'a mut DB>>,
     from: Address,
     to: Address,
     amount: U256,
     target_token: Address,
-    cache_db: &mut DB,
 ) -> Result<Bytes, Box<dyn std::error::Error>>
 where
-    <DB as revm::Database>::Error: Debug,
+    DB: Database + revm::DatabaseRef,
+    <DB as Database>::Error: std::fmt::Debug,
+    <DB as DatabaseRef>::Error: Debug,
+    DB: DatabaseCommit,
 {
     let result = revm_call(
+        evm,
         from,
         target_token,
-        Bytes::from(
-            transferCall {
-                to,
-                value: amount,
-            }
-            .abi_encode(),
-        ),
+        Bytes::from(transferCall { to, value: amount }.abi_encode()),
         U256::ZERO,
-        cache_db,
     )?;
 
     Ok(result)
 }
 
-pub fn approve<DB: Database>(
+pub fn approve<'a, DB>(
+    evm: &mut Evm<'a, (), revm::db::WrapDatabaseRef<&'a mut DB>>,
     caller: Address,
     spender: Address,
     target_token: Address,
-    cache_db: &mut DB,
 ) -> Result<Bytes, Box<dyn std::error::Error>>
 where
-    <DB as revm::Database>::Error: Debug,
+    DB: Database + revm::DatabaseRef,
+    <DB as Database>::Error: std::fmt::Debug,
+    <DB as DatabaseRef>::Error: Debug,
+    DB: DatabaseCommit,
 {
     let result = revm_call(
+        evm,
         caller,
         target_token,
         Bytes::from(
@@ -135,21 +142,24 @@ where
             .abi_encode(),
         ),
         U256::ZERO,
-        cache_db,
     )?;
 
     Ok(result)
 }
 
-pub fn get_token_balance<DB: Database>(
+pub fn get_token_balance<'a, DB>(
+    evm: &mut Evm<'a, (), revm::db::WrapDatabaseRef<&'a mut DB>>,
     account_address: Address,
     target_token: Address,
-    cache_db: &mut DB,
 ) -> Result<U256, Box<dyn std::error::Error>>
 where
-    <DB as revm::Database>::Error: Debug,
+    DB: Database + revm::DatabaseRef,
+    <DB as Database>::Error: std::fmt::Debug,
+    <DB as DatabaseRef>::Error: Debug,
+    DB: DatabaseCommit,
 {
     let balance_bytes = revm_call(
+        evm,
         me(),
         target_token,
         Bytes::from(
@@ -159,23 +169,26 @@ where
             .abi_encode(),
         ),
         U256::ZERO,
-        cache_db,
     )?;
     let balance = bytes_to_u256(balance_bytes)?;
     Ok(balance)
 }
 
-pub fn calculate_pair_address<DB: Database>(
+pub fn calculate_pair_address<'a, DB>(
+    evm: &mut Evm<'a, (), revm::db::WrapDatabaseRef<&'a mut DB>>,
     token_a: Address,
     token_b: Address,
     dipper_caller: Address,
     dipper_contract_address: Address,
-    cache_db: &mut DB,
 ) -> Result<Address, Box<dyn std::error::Error>>
 where
-    <DB as revm::Database>::Error: Debug,
+    DB: Database + revm::DatabaseRef,
+    <DB as Database>::Error: std::fmt::Debug,
+    <DB as DatabaseRef>::Error: Debug,
+    DB: DatabaseCommit,
 {
     let address_bytes = revm_call(
+        evm,
         dipper_caller,
         dipper_contract_address,
         Bytes::from(
@@ -187,7 +200,6 @@ where
             .abi_encode(),
         ),
         U256::ZERO,
-        cache_db,
     )?;
     let address = bytes_to_address(address_bytes)?;
     Ok(address)

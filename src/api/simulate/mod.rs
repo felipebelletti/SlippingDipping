@@ -28,7 +28,7 @@ use hex::FromHex;
 use revm::{
     db::{AlloyDB, CacheDB, EmptyDB},
     primitives::{keccak256, Address, U256},
-    Database, DatabaseRef, Evm, InMemoryDB,
+    Database, DatabaseCommit, DatabaseRef, Evm, InMemoryDB,
 };
 
 use crate::{
@@ -67,48 +67,57 @@ pub async fn simulate<M: Provider + Clone>(client: &M) {
     evm.cfg_mut().disable_block_gas_limit = true;
     evm.cfg_mut().disable_base_fee = true;
     evm.cfg_mut().limit_contract_code_size = Some(0x100000);
-    let mut db = evm.db_mut();
+    // let mut db = evm.db_mut();
+
+    // evm.tx().caller = target_token;
 
     let owner_address = bytes_to_address(
         revm_call(
+            &mut evm,
             me(),
             target_token,
             Bytes::from(ownerCall {}.abi_encode()),
             U256::ZERO,
-            &mut db,
         )
         .unwrap(),
     )
     .unwrap();
 
     // fund accounts
-    db.0.load_account(owner_address).unwrap().info.balance = U256::MAX;
-    db.0.load_account(dipper_caller_address)
+    evm.db_mut()
+        .0
+        .load_account(owner_address)
+        .unwrap()
+        .info
+        .balance = U256::MAX;
+    evm.db_mut()
+        .0
+        .load_account(dipper_caller_address)
         .unwrap()
         .info
         .balance = U256::MAX;
 
     loop {
         let calculated_pair_address = calculate_pair_address(
+            &mut evm,
             *WETH_ADDRESS,
             target_token,
             dipper_caller_address,
             dipper_contract_address,
-            &mut db,
         )
         .unwrap_or_default();
 
         let owner_token_balance =
-            get_token_balance(owner_address, target_token, &mut db).unwrap_or(U256::ZERO);
+            get_token_balance(&mut evm, owner_address, target_token).unwrap_or(U256::ZERO);
 
-        let eth_lp_amount = get_token_balance(calculated_pair_address, *WETH_ADDRESS, &mut db)
+        let eth_lp_amount = get_token_balance(&mut evm, calculated_pair_address, *WETH_ADDRESS)
             .unwrap_or(U256::ZERO);
 
-        let tokens_lp_amount =
-            get_token_balance(calculated_pair_address, target_token, &mut db).unwrap_or(U256::ZERO);
+        let tokens_lp_amount = get_token_balance(&mut evm, calculated_pair_address, target_token)
+            .unwrap_or(U256::ZERO);
 
         let clogged_tokens_amount =
-            get_token_balance(target_token, target_token, &mut db).unwrap_or(U256::ZERO);
+            get_token_balance(&mut evm, target_token, target_token).unwrap_or(U256::ZERO);
 
         let clogged_percentage = if tokens_lp_amount != U256::ZERO {
             clogged_tokens_amount * U256::from(100u64) / tokens_lp_amount
@@ -146,10 +155,10 @@ pub async fn simulate<M: Provider + Clone>(client: &M) {
         match menu_option {
             0 => {}
             1 => {
-                approve_and_add_liquidity_eth(owner_address, target_token, &mut db);
+                approve_and_add_liquidity_eth(&mut evm, owner_address, target_token);
             }
             2 => {
-                enable_trading_menu(owner_address, target_token, &mut db);
+                enable_trading_menu(&mut evm, owner_address, target_token);
             }
             3 => {
                 let percentage_input: String = Input::with_theme(&ColorfulTheme::default())
@@ -168,22 +177,22 @@ pub async fn simulate<M: Provider + Clone>(client: &M) {
                     owner_token_balance * U256::from(percentage) / U256::from(100u64);
 
                 match transfer_erc20_tokens(
+                    &mut evm,
                     owner_address,
                     target_token,
                     parsed_amount,
                     target_token,
-                    &mut db,
                 ) {
-                    Ok(_) => {
-                        printlnt!("{}", format!("Token transfer success").bright_green())
-                    }
-                    Err(err) => {
+                    Ok(result) => {
                         printlnt!(
                             "{}",
-                            format!("Token transfer failure | {}", err).red()
-                        );
+                            format!("Token transfer success | {}", result).bright_green()
+                        )
+                    }
+                    Err(err) => {
+                        printlnt!("{}", format!("Token transfer failure | {}", err).red());
                         return;
-                    }            
+                    }
                 };
             }
             4 => {}
@@ -192,12 +201,15 @@ pub async fn simulate<M: Provider + Clone>(client: &M) {
     }
 }
 
-fn approve_and_add_liquidity_eth<DB: Database>(
+fn approve_and_add_liquidity_eth<'a, DB>(
+    evm: &mut Evm<'a, (), revm::db::WrapDatabaseRef<&'a mut DB>>,
     owner_address: Address,
     target_token: Address,
-    cache_db: &mut DB,
 ) where
-    <DB as revm::Database>::Error: Debug,
+    DB: Database + revm::DatabaseRef,
+    <DB as Database>::Error: std::fmt::Debug,
+    <DB as DatabaseRef>::Error: Debug,
+    DB: DatabaseCommit,
 {
     let percentage_input: String = Input::with_theme(&ColorfulTheme::default())
         .with_prompt("Enter the percentage of tokens to add to LP (e.g., 80)")
@@ -211,7 +223,7 @@ fn approve_and_add_liquidity_eth<DB: Database>(
         percentage = 100;
     }
 
-    let owner_token_balance = match get_token_balance(owner_address, target_token, cache_db) {
+    let owner_token_balance = match get_token_balance(evm, owner_address, target_token) {
         Ok(balance) => balance,
         Err(err) => {
             printlnt!(
@@ -235,15 +247,12 @@ fn approve_and_add_liquidity_eth<DB: Database>(
         U256::from(10 ^ 18)
     });
 
-    match approve(owner_address, *V2_ROUTER_ADDRESS, target_token, cache_db) {
+    match approve(evm, owner_address, *V2_ROUTER_ADDRESS, target_token) {
         Ok(_) => {
             printlnt!("{}", format!("V2 Router approval success").bright_green())
         }
         Err(err) => {
-            printlnt!(
-                "{}",
-                format!("V2 Router approval failure | {}", err).red()
-            );
+            printlnt!("{}", format!("V2 Router approval failure | {}", err).red());
             return;
         }
     };
@@ -256,13 +265,7 @@ fn approve_and_add_liquidity_eth<DB: Database>(
         )
     );
 
-    match add_liquidity(
-        owner_address,
-        target_token,
-        add_lp_tokens,
-        add_lp_eth,
-        cache_db,
-    ) {
+    match add_liquidity(evm, owner_address, target_token, add_lp_tokens, add_lp_eth) {
         Ok(result) => {
             printlnt!(
                 "{}",
@@ -275,12 +278,15 @@ fn approve_and_add_liquidity_eth<DB: Database>(
     };
 }
 
-fn enable_trading_menu<DB: Database>(
+fn enable_trading_menu<'a, DB>(
+    evm: &mut Evm<'a, (), revm::db::WrapDatabaseRef<&'a mut DB>>,
     owner_address: Address,
     target_token: Address,
-    cache_db: &mut DB,
 ) where
-    <DB as revm::Database>::Error: Debug,
+    DB: Database + revm::DatabaseRef,
+    <DB as Database>::Error: std::fmt::Debug,
+    <DB as DatabaseRef>::Error: Debug,
+    DB: DatabaseCommit,
 {
     let menu_option = FuzzySelect::with_theme(&ColorfulTheme::default())
         .with_prompt("Choose an option")
@@ -303,11 +309,11 @@ fn enable_trading_menu<DB: Database>(
     };
 
     match enable_trading(
+        evm,
         owner_address,
         target_token,
         maybe_method_id,
         maybe_value,
-        cache_db,
     ) {
         Ok(response) => {
             printlnt!(
