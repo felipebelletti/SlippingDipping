@@ -3221,6 +3221,7 @@ dependencies = [
  "lazy_static",
  "md5",
  "openssl",
+ "rand",
  "regex",
  "reqwest",
  "revm",

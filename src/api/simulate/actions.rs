@@ -10,14 +10,14 @@ use revm::primitives::{Address, Bytes, U256};
 use revm::{Database, DatabaseCommit, DatabaseRef, Evm};
 
 use crate::config::general::GLOBAL_CONFIG;
-use crate::globals::{V2_FACTORY_ADDRESS, V2_ROUTER_ADDRESS};
+use crate::globals::{V2_FACTORY_ADDRESS, V2_ROUTER_ADDRESS, WETH_ADDRESS};
 use crate::Dipper::{calculatePairCall, exploitCall};
 use crate::UniswapV2Pair::{transferCall, transferFromCall};
-use crate::UniswapV2Router01::addLiquidityETHCall;
-use crate::ERC20::{approveCall, balanceOfCall, decimalsCall};
+use crate::UniswapV2Router01::{addLiquidityETHCall, swapETHForExactTokensCall};
+use crate::ERC20::{approveCall, balanceOfCall, decimalsCall, totalSupplyCall};
 
 use super::actors::me;
-use super::helpers::{bytes_to_address, bytes_to_u256, revm_call};
+use super::helpers::{bytes_to_address, bytes_to_u256, bytes_to_u8, revm_call};
 
 pub fn dipper_exploit<'a, DB>(
     evm: &mut Evm<'a, (), revm::db::WrapDatabaseRef<&'a mut DB>>,
@@ -32,25 +32,24 @@ where
     <DB as DatabaseRef>::Error: Debug,
     DB: DatabaseCommit,
 {
+    let call = exploitCall {
+        pair,
+        path: path,
+        maxEthSpentOnExploit: parse_ether("1000").unwrap(),
+        maxRounds: u8::MAX,
+        minEthLiquidity: U256::ZERO,
+        expectedLpVariationAfterDip: U256::ZERO,
+        swapThresholdTokens: GLOBAL_CONFIG.sniping.swap_threshold_tokens_amount,
+        sniperWallets: vec![],
+        sniper_max_failed_swaps: 0,
+    };
+
     let result = revm_call(
         evm,
         caller,
         dipper_address,
-        Bytes::from(
-            exploitCall {
-                pair,
-                path,
-                maxEthSpentOnExploit: parse_ether("1000").unwrap(),
-                maxRounds: u8::MAX,
-                minEthLiquidity: U256::ZERO,
-                expectedLpVariationAfterDip: U256::ZERO,
-                swapThresholdTokens: GLOBAL_CONFIG.sniping.swap_threshold_tokens_amount,
-                sniperWallets: vec![],
-                sniper_max_failed_swaps: 0,
-            }
-            .abi_encode(),
-        ),
-        parse_ether("2000").unwrap(),
+        Bytes::from(call.abi_encode()),
+        parse_ether("1000").unwrap(),
     )?;
 
     Ok(result)
@@ -241,4 +240,76 @@ where
     )?;
     let address = bytes_to_address(address_bytes)?;
     Ok(address)
+}
+
+pub fn get_decimals<'a, DB>(
+    evm: &mut Evm<'a, (), revm::db::WrapDatabaseRef<&'a mut DB>>,
+    target_token: Address,
+) -> Result<u8, Box<dyn std::error::Error>>
+where
+    DB: Database + revm::DatabaseRef,
+    <DB as Database>::Error: std::fmt::Debug,
+    <DB as DatabaseRef>::Error: Debug,
+    DB: DatabaseCommit,
+{
+    let decimals_bytes = revm_call(
+        evm,
+        me(),
+        target_token,
+        Bytes::from(decimalsCall {}.abi_encode()),
+        U256::ZERO,
+    )?;
+    let decimals = bytes_to_u8(decimals_bytes)?;
+    Ok(decimals)
+}
+
+pub fn get_total_supply<'a, DB>(
+    evm: &mut Evm<'a, (), revm::db::WrapDatabaseRef<&'a mut DB>>,
+    target_token: Address,
+) -> Result<U256, Box<dyn std::error::Error>>
+where
+    DB: Database + revm::DatabaseRef,
+    <DB as Database>::Error: std::fmt::Debug,
+    <DB as DatabaseRef>::Error: Debug,
+    DB: DatabaseCommit,
+{
+    let total_supply_bytes = revm_call(
+        evm,
+        me(),
+        target_token,
+        Bytes::from(totalSupplyCall {}.abi_encode()),
+        U256::ZERO,
+    )?;
+    let total_supply = bytes_to_u256(total_supply_bytes)?;
+    Ok(total_supply)
+}
+
+pub fn swap_eth_for_exact_tokens<'a, DB>(
+    evm: &mut Evm<'a, (), revm::db::WrapDatabaseRef<&'a mut DB>>,
+    swapper: Address,
+    target_token: Address,
+    tokens: U256,
+    max_spend_eth: U256,
+) -> Result<Bytes, Box<dyn std::error::Error>>
+where
+    DB: Database + revm::DatabaseRef,
+    <DB as Database>::Error: std::fmt::Debug,
+    <DB as DatabaseRef>::Error: Debug,
+    DB: DatabaseCommit,
+{
+    Ok(revm_call(
+        evm,
+        swapper,
+        *V2_ROUTER_ADDRESS,
+        Bytes::from(
+            swapETHForExactTokensCall {
+                amountOut: tokens,
+                deadline: U256::MAX,
+                path: vec![*WETH_ADDRESS, target_token],
+                to: swapper,
+            }
+            .abi_encode(),
+        ),
+        max_spend_eth,
+    )?)
 }

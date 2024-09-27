@@ -69,8 +69,8 @@ async fn main() {
             .unwrap(),
     );
 
-    simulate::simulate(&client).await;
-    return
+    // simulate::simulate(&client).await;
+    // return;
 
     show_pretty_wallet_dashboard(client.clone(), GLOBAL_WALLETS.get_wallets()).await;
 
@@ -78,7 +78,8 @@ async fn main() {
         .with_prompt("Choose an option")
         .items(&vec![
             "[ 0 ] M1/M2/M3/M4/M5/M6 Block-Zero Dipper",
-            "[ 1 ] Sell-Stream",
+            "[ 1 ] Dipper Simulator",
+            "[ 2 ] Sell-Stream",
         ])
         .default(0)
         .interact()
@@ -89,6 +90,9 @@ async fn main() {
             strategies::blockzero_dipper::run(client).await;
         }
         1 => {
+            simulate::simulate(&client).await;
+        }
+        2 => {
             sell_stream::run(client, None, None).await;
         }
         _ => unreachable!(),
@@ -155,6 +159,7 @@ sol! {
             uint256 tokensAmount;
         }
         function paybribe_81014001426369(uint256 _targetBlockNumber) external payable {}
+        #[derive(Debug)]
         function exploit(
             uint8 maxRounds,
             uint256 expectedLpVariationAfterDip,

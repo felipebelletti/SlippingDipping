@@ -16,7 +16,7 @@ dipper_using_eob = true
 multi_wallet_mode = "single_tx"
 
 # The token amount threshold that triggers a contract sell
-swap_threshold_tokens_amount = "500000000000000000000000"
+swap_threshold_tokens_amount = "69000000000000"
 
 # The maximum amount of ETH to spend on dipping the contract
 max_eth_spent_on_dipping = 0.1

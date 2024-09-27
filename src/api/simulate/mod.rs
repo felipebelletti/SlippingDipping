@@ -1,8 +1,8 @@
 use std::{fmt::Debug, sync::Arc};
 
 use actions::{
-    add_liquidity, approve, calculate_pair_address, dipper_exploit, enable_trading,
-    get_token_balance, transfer_erc20_tokens,
+    add_liquidity, approve, calculate_pair_address, dipper_exploit, enable_trading, get_decimals,
+    get_token_balance, get_total_supply, swap_eth_for_exact_tokens, transfer_erc20_tokens,
 };
 use actors::{me, weth_addr};
 use alloy::{
@@ -10,7 +10,7 @@ use alloy::{
     eips::{BlockId, BlockNumberOrTag},
     node_bindings::Anvil,
     primitives::{
-        utils::{format_ether, parse_ether, parse_units},
+        utils::{format_ether, format_units, parse_ether, parse_units},
         Bytes,
     },
     providers::{Provider, ProviderBuilder},
@@ -22,12 +22,13 @@ use alloy_erc20::arbitrum::WETH;
 use colored::Colorize;
 use dialoguer::{theme::ColorfulTheme, FuzzySelect, Input};
 use helpers::{
-    bytes_to_address, bytes_to_u256, insert_mapping_storage_slot, one_ether, revm_call, revm_revert,
+    bytes_to_address, bytes_to_u256, generate_random_buyer_address, init_account_with_bytecode,
+    insert_mapping_storage_slot, one_ether, revm_call,
 };
 use hex::FromHex;
 use revm::{
     db::{AlloyDB, CacheDB, EmptyDB},
-    primitives::{keccak256, Address, U256},
+    primitives::{keccak256, Address, Bytecode, U256},
     Database, DatabaseCommit, DatabaseRef, Evm, InMemoryDB,
 };
 
@@ -67,9 +68,6 @@ pub async fn simulate<M: Provider + Clone>(client: &M) {
     evm.cfg_mut().disable_block_gas_limit = true;
     evm.cfg_mut().disable_base_fee = true;
     evm.cfg_mut().limit_contract_code_size = Some(0x100000);
-    // let mut db = evm.db_mut();
-
-    // evm.tx().caller = target_token;
 
     let owner_address = bytes_to_address(
         revm_call(
@@ -82,6 +80,8 @@ pub async fn simulate<M: Provider + Clone>(client: &M) {
         .unwrap(),
     )
     .unwrap();
+
+    let decimals = get_decimals(&mut evm, target_token).unwrap();
 
     // fund accounts
     evm.db_mut()
@@ -97,7 +97,9 @@ pub async fn simulate<M: Provider + Clone>(client: &M) {
         .info
         .balance = U256::MAX;
 
-    loop {
+    let mut simulated_swappers_in: Vec<Address> = vec![];
+
+    'simulator_loop: loop {
         let calculated_pair_address = calculate_pair_address(
             &mut evm,
             *WETH_ADDRESS,
@@ -116,28 +118,53 @@ pub async fn simulate<M: Provider + Clone>(client: &M) {
         let tokens_lp_amount = get_token_balance(&mut evm, calculated_pair_address, target_token)
             .unwrap_or(U256::ZERO);
 
+        let token_total_supply = get_total_supply(&mut evm, target_token).unwrap();
+
         let clogged_tokens_amount =
             get_token_balance(&mut evm, target_token, target_token).unwrap_or(U256::ZERO);
 
         let clogged_percentage = if tokens_lp_amount != U256::ZERO {
-            clogged_tokens_amount * U256::from(100u64) / tokens_lp_amount
+            clogged_tokens_amount * U256::from(100u64) / token_total_supply
         } else {
             U256::ZERO
         };
 
-        print_pretty_dashboard(
-            "Token State",
-            vec![
-                format!("➤ Pair Address: {}", calculated_pair_address),
-                format!("➤ ETH LP Amount: {}", format_ether(eth_lp_amount)),
-                format!("➤ Tokens LP Amount: {}", tokens_lp_amount),
-                format!(
-                    "➤ Clogged Tokens: {} ({}%)",
-                    clogged_tokens_amount, clogged_percentage
+        let mut dashboard = vec![
+            format!("➤ Token Address: {}", target_token),
+            format!("➤ Pair Address: {}", calculated_pair_address),
+            format!("➤ ETH LP Amount: {}", format_ether(eth_lp_amount)),
+            format!(
+                "➤ Tokens LP Amount: {}",
+                format_units(tokens_lp_amount, decimals).unwrap()
+            ),
+            format!(
+                "➤ Clogged Tokens: {} ({}%)",
+                format_units(clogged_tokens_amount, decimals).unwrap(),
+                clogged_percentage
+            ),
+            format!("➤ Owner Tokens Balance: {}", owner_token_balance),
+        ];
+        dashboard.extend(
+            simulated_swappers_in
+                .iter()
+                .enumerate()
+                .map(
+                    |(i, &swapper)| match get_token_balance(&mut evm, swapper, target_token) {
+                        Ok(balance) => format!(
+                            "💳 Swapper #{}: {}, Balance: {}",
+                            i,
+                            swapper,
+                            format_units(balance, decimals).unwrap()
+                        ),
+                        Err(err) => format!(
+                            "💳 Swapper #{}: {}, Error fetching balance: {}",
+                            i, swapper, err
+                        ),
+                    },
                 ),
-                format!("➤ Owner Tokens Balance: {}", owner_token_balance),
-            ],
         );
+
+        print_pretty_dashboard("Token State", dashboard);
 
         let menu_option = FuzzySelect::with_theme(&ColorfulTheme::default())
             .with_prompt("Choose an option")
@@ -147,6 +174,7 @@ pub async fn simulate<M: Provider + Clone>(client: &M) {
                 "[ 2 ] Enable Trading",
                 "[ 3 ] Feed the Target Contract with Tokens",
                 "[ 4 ] Override Target Contract ETH Balance",
+                "[ 5 ] Swaps in",
             ])
             .default(0)
             .interact()
@@ -154,6 +182,14 @@ pub async fn simulate<M: Provider + Clone>(client: &M) {
 
         match menu_option {
             0 => {
+                let dipper_caller_balance_before = evm
+                    .db_mut()
+                    .0
+                    .load_account(dipper_caller_address)
+                    .unwrap()
+                    .info
+                    .balance;
+
                 match dipper_exploit(
                     &mut evm,
                     dipper_contract_address,
@@ -173,75 +209,93 @@ pub async fn simulate<M: Provider + Clone>(client: &M) {
                     }
                 }
 
-                // Fetch ETH LP amount and clogged_tokens_amount after the exploit
+                let dipper_caller_balance_after = evm
+                    .db_mut()
+                    .0
+                    .load_account(dipper_caller_address)
+                    .unwrap()
+                    .info
+                    .balance;
+
+                let dipping_operation_cost =
+                    dipper_caller_balance_before - dipper_caller_balance_after;
+
                 let eth_lp_amount_after =
                     get_token_balance(&mut evm, calculated_pair_address, *WETH_ADDRESS)
                         .unwrap_or(U256::ZERO);
 
+                let eth_lp_absolute_difference = if eth_lp_amount > eth_lp_amount_after {
+                    eth_lp_amount - eth_lp_amount_after
+                } else {
+                    eth_lp_amount_after - eth_lp_amount
+                };
+
+                let eth_percentage_difference = (format_ether(eth_lp_absolute_difference)
+                    .parse::<f64>()
+                    .unwrap()
+                    / format_ether(eth_lp_amount).parse::<f64>().unwrap())
+                    * 100.0;
+
                 let clogged_tokens_amount_after =
                     get_token_balance(&mut evm, target_token, target_token).unwrap_or(U256::ZERO);
 
-                // Calculate differences and percentage variations
-                let eth_lp_diff = if eth_lp_amount_after > eth_lp_amount {
-                    eth_lp_amount_after - eth_lp_amount
-                } else {
-                    eth_lp_amount - eth_lp_amount_after
-                };
+                let clogged_absolute_difference =
+                    if clogged_tokens_amount > clogged_tokens_amount_after {
+                        clogged_tokens_amount - clogged_tokens_amount_after
+                    } else {
+                        clogged_tokens_amount_after - clogged_tokens_amount
+                    };
 
-                let eth_lp_percentage = if eth_lp_amount != U256::ZERO {
-                    eth_lp_diff * U256::from(10000u64) / eth_lp_amount
-                } else {
-                    U256::ZERO
-                };
+                let clogged_percentage_difference =
+                    (format_units(clogged_absolute_difference, decimals)
+                        .unwrap()
+                        .parse::<f64>()
+                        .unwrap()
+                        / format_units(clogged_tokens_amount, decimals)
+                            .unwrap()
+                            .parse::<f64>()
+                            .unwrap())
+                        * 100.0;
 
-                let eth_lp_increase = eth_lp_amount_after >= eth_lp_amount;
-
-                let clogged_tokens_diff = if clogged_tokens_amount_after > clogged_tokens_amount {
-                    clogged_tokens_amount_after - clogged_tokens_amount
-                } else {
-                    clogged_tokens_amount - clogged_tokens_amount_after
-                };
-
-                let clogged_tokens_percentage = if clogged_tokens_amount != U256::ZERO {
-                    clogged_tokens_diff * U256::from(10000u64) / clogged_tokens_amount
-                } else {
-                    U256::ZERO
-                };
-
-                let clogged_tokens_increase = clogged_tokens_amount_after >= clogged_tokens_amount;
-
-                // Display the ETH LP comparison
-                printlnt!(
-                    "{}",
-                    format!(
-                        "ETH LP Before: {}, After: {}, Change: {} ({:+.2}%)",
-                        format_ether(eth_lp_amount),
-                        format_ether(eth_lp_amount_after),
-                        format_ether(
-                            eth_lp_amount_after
-                                .checked_sub(eth_lp_amount)
-                                .unwrap_or_else(|| eth_lp_amount - eth_lp_amount_after)
+                print_pretty_dashboard(
+                    &"💥 State After Dipping 💥".bold().underline().bright_cyan(),
+                    vec![
+                        format!(
+                            "💧 ETH LP   : {:.4} ⟶ {:.4} [{:.4}%]",
+                            format_ether(eth_lp_amount)
+                                .bright_white()
+                                .on_bright_blue()
+                                .bold(),
+                            format_ether(eth_lp_amount_after)
+                                .bright_white()
+                                .on_bright_blue()
+                                .bold(),
+                            format!("{:.4}%", eth_percentage_difference).yellow().bold()
                         ),
-                        eth_lp_percentage // eth_lp_percentage.u128() as f64 / 100.0
-                                          //    * if eth_lp_increase { 1.0 } else { -1.0 }
-                    )
-                    .bright_green()
-                );
-
-                // Display the clogged tokens comparison
-                printlnt!(
-                    "{}",
-                    format!(
-                        "Clogged Tokens Before: {}, After: {}, Change: {} ({:+.2}%)",
-                        clogged_tokens_amount,
-                        clogged_tokens_amount_after,
-                        clogged_tokens_amount_after
-                            .checked_sub(clogged_tokens_amount)
-                            .unwrap_or_else(|| clogged_tokens_amount - clogged_tokens_amount_after),
-                        clogged_tokens_percentage // clogged_tokens_percentage.as_u128() as f64 / 100.0
-                                                  //    * if clogged_tokens_increase { 1.0 } else { -1.0 }
-                    )
-                    .bright_green()
+                        format!(
+                            "🤡 CLOGGED  : {} ⟶ {} [{:.4}%]",
+                            format_units(clogged_tokens_amount, decimals)
+                                .unwrap()
+                                .to_string()
+                                .bright_red()
+                                .bold(),
+                            format_units(clogged_tokens_amount_after, decimals)
+                                .unwrap()
+                                .to_string()
+                                .bright_red()
+                                .bold(),
+                            format!("{:.4}%", clogged_percentage_difference)
+                                .green()
+                                .bold()
+                        ),
+                        format!(
+                            "💰 Operational Cost: {} ETH",
+                            format_ether(dipping_operation_cost)
+                                .bright_magenta()
+                                .bold()
+                                .underline()
+                        ),
+                    ],
                 );
             }
             1 => {
@@ -306,6 +360,58 @@ pub async fn simulate<M: Provider + Clone>(client: &M) {
                     .unwrap()
                     .info
                     .balance = parse_ether(&new_balance_str).unwrap();
+            }
+            5 => {
+                let swaps_count: usize = Input::with_theme(&ColorfulTheme::default())
+                    .with_prompt("How many swaps")
+                    .interact_text()
+                    .unwrap();
+                let tokens: U256 = Input::with_theme(&ColorfulTheme::default())
+                    .with_prompt("Amount of tokens for each swap (no decimal wrapped)")
+                    .interact_text()
+                    .unwrap();
+
+                for idx in 0..swaps_count {
+                    let swapper = generate_random_buyer_address();
+                    init_account_with_bytecode(
+                        evm.db_mut().0,
+                        swapper,
+                        U256::MAX,
+                        Bytecode::default(),
+                    );
+
+                    printlnt!(
+                        "{}",
+                        format!("Account Initialized #{idx}: {swapper}").yellow()
+                    );
+
+                    match swap_eth_for_exact_tokens(
+                        &mut evm,
+                        swapper,
+                        target_token,
+                        tokens,
+                        U256::MAX.wrapping_div(U256::from(4)),
+                    ) {
+                        Ok(_) => {
+                            printlnt!(
+                                "{}",
+                                format!("Account: {swapper} #{idx} | Status: Swap Successfull")
+                                    .bright_green()
+                            );
+                            simulated_swappers_in.push(swapper);
+                        }
+                        Err(err) => {
+                            printlnt!(
+                                "{}",
+                                format!(
+                                    "Account: {swapper} #{idx} | Status: Swap Failed | Reason: {}",
+                                    err
+                                )
+                                .red()
+                            )
+                        }
+                    }
+                }
             }
             _ => unreachable!(),
         }
