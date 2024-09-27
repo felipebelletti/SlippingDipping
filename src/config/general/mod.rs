@@ -43,6 +43,8 @@ pub struct TransactionBuilder {
     pub max_priority_fee_per_gas: f64,
     pub sell_slippage_percent: f64,
     pub gas_oracle: bool,
+    pub pseudo_eob_max_fee_per_gas: f64,
+    pub pseudo_eob_max_priority_fee_per_gas: f64,
 }
 
 #[derive(Debug, Deserialize)]

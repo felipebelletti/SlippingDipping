@@ -11,6 +11,7 @@ use revm::{Database, DatabaseCommit, DatabaseRef, Evm};
 
 use crate::config::general::GLOBAL_CONFIG;
 use crate::globals::{V2_FACTORY_ADDRESS, V2_ROUTER_ADDRESS, WETH_ADDRESS};
+use crate::printlnt;
 use crate::Dipper::{calculatePairCall, exploitCall};
 use crate::UniswapV2Pair::{transferCall, transferFromCall};
 use crate::UniswapV2Router01::{addLiquidityETHCall, swapETHForExactTokensCall};
@@ -43,6 +44,10 @@ where
         sniperWallets: vec![],
         sniper_max_failed_swaps: 0,
     };
+
+    let calldata = Bytes::from(call.abi_encode());
+    
+    printlnt!("Calldata hex (feed ***REMOVED*** with this line): 0x{}", hex::encode(calldata));
 
     let result = revm_call(
         evm,

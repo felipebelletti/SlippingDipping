@@ -37,6 +37,9 @@ expected_lp_variation_after_dip = 20.0
 spammer_secs_delay = 12
 
 [tx_builder]
+pseudo_eob_max_fee_per_gas = 100
+pseudo_eob_max_priority_fee_per_gas = 100
+
 dipper_gas_limit = "8139815"
 
 # The gas limit for the snipe transaction

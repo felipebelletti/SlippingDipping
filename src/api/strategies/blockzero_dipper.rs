@@ -11,6 +11,7 @@ use alloy::{
     transports::BoxTransport,
 };
 use alloy_erc20::LazyToken;
+use futures::future::{select, Either};
 use revm::primitives::{keccak256, Bytes, FixedBytes, U256};
 use std::{
     collections::HashMap,
@@ -368,7 +369,54 @@ async fn start_eob_spamming<M: Provider + 'static>(
                 }
             };
 
-            let (encoded_dipper_tx, dipper_tx_hash) = {
+            let (pseudo_eob_encoded_dipper_tx, pseudo_eob_dipper_tx_hash) = {
+                // encoded_bribe_txs uses main_wallet_nonce + 0
+                let dipper_tx = build_dipper_transaction(
+                    &dipper,
+                    nonce,
+                    gas_limit,
+                    tx_value,
+                    parse_units(
+                        &GLOBAL_CONFIG
+                            .tx_builder
+                            .pseudo_eob_max_fee_per_gas
+                            .to_string(),
+                        "gwei",
+                    )
+                    .unwrap()
+                    .to_string()
+                    .parse()
+                    .unwrap(),
+                    parse_units(
+                        &GLOBAL_CONFIG
+                            .tx_builder
+                            .pseudo_eob_max_priority_fee_per_gas
+                            .to_string(),
+                        "gwei",
+                    )
+                    .unwrap()
+                    .to_string()
+                    .parse()
+                    .unwrap(),
+                    expected_lp_variation_after_dip,
+                    max_eth_spent_on_dipping,
+                    min_eth_liquidity,
+                    predicted_pair_address,
+                    target_token_address,
+                    dest_wallets.clone(),
+                );
+
+                let signed_tx = dipper_tx
+                    .into_transaction_request()
+                    .build(&caller_wallet.signer)
+                    .await
+                    .unwrap();
+                let tx_hash = signed_tx.tx_hash().to_owned();
+
+                (tx_envelope_to_raw_tx(signed_tx), tx_hash)
+            };
+
+            let (eob_encoded_dipper_tx, eob_dipper_tx_hash) = {
                 // encoded_bribe_txs uses main_wallet_nonce + 0
                 let dipper_tx = build_dipper_transaction(
                     &dipper,
@@ -410,9 +458,9 @@ async fn start_eob_spamming<M: Provider + 'static>(
                 if include_pseudo_eob_builders {
                     Some(mev_builders::broadcast::broadcast_bundle(
                         SendBundleParams {
-                            txs: vec![hex::encode(encoded_dipper_tx.clone())],
+                            txs: vec![hex::encode(pseudo_eob_encoded_dipper_tx.clone())],
                             block_number: Some(format!("0x{:x}", target_block_number)),
-                            reverting_tx_hashes: Some(vec![dipper_tx_hash]),
+                            reverting_tx_hashes: Some(vec![pseudo_eob_dipper_tx_hash]),
                             builders: Some(vec![
                                 "flashbots".to_string(),
                                 "f1b.io".to_string(),
@@ -444,7 +492,7 @@ async fn start_eob_spamming<M: Provider + 'static>(
 
             let eob_task = {
                 let mut txs: Vec<String> = vec![
-                    hex::encode(encoded_dipper_tx),
+                    hex::encode(eob_encoded_dipper_tx),
                     hex::encode(encoded_bribe_tx),
                 ];
                 txs.extend(signed_multi_swap_txs.iter().map(|el| hex::encode(el)));
@@ -473,40 +521,62 @@ async fn start_eob_spamming<M: Provider + 'static>(
                     let (result_pseudo_eob_task, result_eob_task) = join!(pseudo_eob, eob_task);
                     handle_task_result(
                         result_pseudo_eob_task,
-                        &dipper_tx_hash,
+                        &pseudo_eob_dipper_tx_hash,
                         "Pseudo EoB Bundle",
                         target_block_number,
                     );
                     handle_task_result(
                         result_eob_task,
-                        &dipper_tx_hash,
+                        &eob_dipper_tx_hash,
                         "EoB Bundle",
                         target_block_number,
                     );
                 }
                 None => {
-                    // Caso contrário, apenas aguardamos a eob_task
                     let result_eob_task = eob_task.await;
                     handle_task_result(
                         result_eob_task,
-                        &dipper_tx_hash,
+                        &eob_dipper_tx_hash,
                         "EoB Bundle",
                         target_block_number,
                     );
                 }
             }
 
-            let receipt =
-                match utils::get_tx_receipt(client.clone(), dipper_tx_hash, 12, 6.0, false).await {
-                    Some(receipt) => receipt,
-                    None => {
-                        printlnt!(
-                            "{}",
-                            format!("Bundle not landed | {}", &dipper_tx_hash).red()
-                        );
-                        return;
+            let mut pseudo_tx_done = false;
+            let mut eob_tx_done = false;
+
+            let mut pseudo_receipt = Box::pin(utils::get_tx_receipt(
+                client.clone(),
+                pseudo_eob_dipper_tx_hash,
+                12,
+                6.0,
+                false,
+            ));
+            let mut eob_receipt = Box::pin(utils::get_tx_receipt(
+                client.clone(),
+                eob_dipper_tx_hash,
+                12,
+                6.0,
+                false,
+            ));
+
+            let receipt = loop {
+                select! {
+                    res = &mut pseudo_receipt, if !pseudo_tx_done => match res {
+                        Some(receipt) => break receipt,
+                        None => pseudo_tx_done = true,
+                    },
+                    res = &mut eob_receipt, if !eob_tx_done => match res {
+                        Some(receipt) => break receipt,
+                        None => eob_tx_done = true,
                     }
-                };
+                }
+                if pseudo_tx_done && eob_tx_done {
+                    printlnt!("{}", format!("Both strategies (pseudo_eob and eob) failed to land").red());
+                    return;
+                }
+            };
 
             let gas_used = receipt.gas_used;
             let gas_price = receipt.effective_gas_price;
