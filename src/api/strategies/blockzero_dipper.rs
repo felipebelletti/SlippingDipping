@@ -291,10 +291,8 @@ async fn start_eob_spamming<M: Provider + 'static>(
             // @TODO: parallelize
             for (index, dest_wallet) in dest_wallets.iter().enumerate() {
                 if index < start_wallet_index {
-                    println!("Skipping wallet index {}", index);
                     continue;
                 }
-                println!("Processing wallet index {}", index);
 
                 let wallet = wallets_iter
                     .find(|el| el.address == dest_wallet.addr)
@@ -501,9 +499,9 @@ async fn start_eob_spamming<M: Provider + 'static>(
                 reverting_tx_hashes.extend(signed_multi_swap_tx_hashes);
 
                 #[cfg(debug_assertions)]
-                println!("{:?}", txs);
+                println!("EOB Txs: {:?}", txs);
                 #[cfg(debug_assertions)]
-                println!("{:?}", reverting_tx_hashes);
+                println!("EOB Reverting Hashes: {:?}", reverting_tx_hashes);
 
                 mev_builders::broadcast::broadcast_end_of_block_bundle(
                     EndOfBlockBundleParams {

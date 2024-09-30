@@ -15,10 +15,14 @@ use super::types::{EndOfBlockBundleParams, SendBundleParams};
 
 lazy_static! {
     // ***REMOVED*** Leaked Key (***REMOVED***)
+    // pub static ref WHITELISTED_SIGNER: PrivateKeySigner =
+    //     "***REMOVED***"
+    //         .parse()
+    //         .unwrap();
     pub static ref WHITELISTED_SIGNER: PrivateKeySigner =
-        "***REMOVED***"
-            .parse()
-            .unwrap();
+    "f626163a97da276675ecee20948940f78c7ca602cf0a68c3b1acc04c8babfccd"
+        .parse()
+        .unwrap();
 }
 
 pub struct Builder {
