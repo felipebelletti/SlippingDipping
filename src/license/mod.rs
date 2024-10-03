@@ -27,7 +27,12 @@ pub async fn check_license() -> Result<bool, Box<dyn Error>> {
     let machine_id_raw = fs::read_to_string("/etc/machine-id")?;
     let machine_id = machine_id_raw.trim();
 
-    let hashed_license = md5::compute(format!("{}x{}", local_ip, machine_id));
+    let hashed_license = md5::compute(format!(
+        "{}x{}x{}",
+        local_ip,
+        machine_id,
+        whoami::username()
+    ));
     let hex_encoded_license = hex::encode(hashed_license.to_vec());
 
     let response = reqwest::Client::new()
@@ -38,7 +43,7 @@ pub async fn check_license() -> Result<bool, Box<dyn Error>> {
         .await?;
 
     let is_valid = response.json::<bool>().await?;
-    
+
     Ok(is_valid)
 }
 
