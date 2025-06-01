@@ -1,7 +1,9 @@
 ## Archived
-I'm disclosing this project since I'm no longer actively working on it.
+I'm disclosing this project since I'm no longer actively working on it.  
 
-This project contains a full Proof of Concept (PoC) for exploiting ERC20 tokens on Ethereum. Specifically, it targets token contracts that hold a portion of their own tokens to implement a tax mechanism through token sales, which generates profit for the token developer.
+This project contains a full Proof of Concept (PoC) for exploiting ERC20 tokens on Ethereum.    
+
+Specifically, it targets token contracts that hold a portion of their own tokens to implement a tax mechanism through token sales, which generates profit for the token developer.    
 
 Note: Sensitive information has been redacted and is marked with \*\*\*REMOVED\*\*\* throughout the codebase.
 
